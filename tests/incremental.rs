@@ -154,7 +154,7 @@ fn tree_id_is_independent_of_jobs_and_duplicate_chunks_are_stored_once() {
 #[test]
 fn excludes_golden_and_cli_exclude_file_comments() {
     let scratch = tempfile::tempdir().unwrap();
-    let root = scratch.path().join("source");
+    let root = fs::canonicalize(scratch.path()).unwrap().join("source");
     for dir in ["nested", "cache", "nested/cache", "sub"] {
         fs::create_dir_all(root.join(dir)).unwrap();
     }

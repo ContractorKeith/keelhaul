@@ -9,7 +9,7 @@ use std::{fs, sync::mpsc, time::Duration};
 #[test]
 fn upload_and_index_failures_release_backpressure_and_preserve_snapshots() {
     let scratch = tempfile::tempdir().unwrap();
-    let source = scratch.path().join("source");
+    let source = fs::canonicalize(scratch.path()).unwrap().join("source");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("old"), b"earlier snapshot").unwrap();
     let secret = Secret::KeyFile([31; 32]);

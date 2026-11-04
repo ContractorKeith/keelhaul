@@ -19,7 +19,7 @@ fn report_counter_does_not_change_snapshot_format() {
 #[test]
 fn overlapping_roots_keep_independent_root_names() {
     let scratch = tempfile::tempdir().unwrap();
-    let root = scratch.path().join("source");
+    let root = fs::canonicalize(scratch.path()).unwrap().join("source");
     fs::create_dir_all(root.join("nested")).unwrap();
     fs::write(root.join("nested/file"), b"overlap").unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([3; 32])).unwrap();
