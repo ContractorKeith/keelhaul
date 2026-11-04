@@ -18,3 +18,4 @@ pub mod cli;
 pub mod host;
 
 pub mod chunker;
+pub mod damage;

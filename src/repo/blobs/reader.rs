@@ -12,6 +12,34 @@ impl<B: Backend> BlobStore<'_, B> {
             self.index.get(&(kind, id.into())).cloned().ok_or_else(|| {
                 damage(id, "dangling-reference", "blob is absent from live index")
             })?;
+        let mut result = self.read_location(id, &loc);
+        if !matches!(result, Err(Error::Damage { .. })) {
+            return result;
+        }
+        let mut alternatives = self
+            .headers
+            .iter()
+            .filter(|(pack, _)| *pack != &loc.pack)
+            .flat_map(|(pack, (_, blobs))| {
+                blobs
+                    .iter()
+                    .filter(move |b| b.kind == kind && b.id == id)
+                    .map(move |blob| Location {
+                        pack: pack.clone(),
+                        blob: blob.clone(),
+                    })
+            })
+            .collect::<Vec<_>>();
+        alternatives.sort_by(|a, b| a.pack.cmp(&b.pack));
+        for alternative in alternatives {
+            result = self.read_location(id, &alternative);
+            if !matches!(result, Err(Error::Damage { .. })) {
+                return result;
+            }
+        }
+        result
+    }
+    fn read_location(&mut self, id: &str, loc: &Location) -> Result<Vec<u8>, Error> {
         self.verify_pack(&loc.pack)?;
         let name = pack_name(&loc.pack)?;
         let stored = self
@@ -19,65 +47,22 @@ impl<B: Backend> BlobStore<'_, B> {
             .backend
             .read_range(&name, loc.blob.offset, loc.blob.length)
             .map_err(|e| missing(&name, e))?;
-        if stored.len() as u64 != loc.blob.length {
-            return Err(damage(name.as_str(), "truncated", "blob range is short"));
-        }
-        let payload = envelope::open(
-            &self.repo.master.subkeys().encryption,
-            kind.label(),
+        crate::repo::audit::blob(
+            &self.repo.master.subkeys(),
+            id,
+            name.as_str(),
+            &loc.blob,
             &stored,
         )
-        .map_err(|e| damage(name.as_str(), "undecryptable", &e.to_string()))?;
-        if payload.len() as u64 != loc.blob.raw_length {
-            return Err(damage(
-                name.as_str(),
-                "size-mismatch",
-                "blob raw length differs",
-            ));
-        }
-        if blake3::keyed_hash(&self.repo.master.subkeys().chunk_id, &payload)
-            .to_hex()
-            .as_str()
-            != id
-        {
-            return Err(damage(
-                name.as_str(),
-                "hash-mismatch",
-                "blob keyed ID differs",
-            ));
-        }
-        Ok(payload)
     }
+
     fn verify_pack(&mut self, id: &str) -> Result<(), Error> {
         if self.verified.contains(id) {
             return Ok(());
         }
         let name = pack_name(id)?;
-        let len = self
-            .repo
-            .backend
-            .stat(&name)
-            .map_err(|e| missing(&name, e))?;
-        let trailer = self
-            .repo
-            .backend
-            .read_range(&name, len.saturating_sub(4), 4)
-            .map_err(|e| missing(&name, e))?;
-        let header_len = header_length(&trailer, len)
-            .map_err(|e| damage(name.as_str(), "bad-header", &e.to_string()))?;
-        let stored = self
-            .repo
-            .backend
-            .read_range(&name, len - 4 - header_len, header_len)
-            .map_err(|e| missing(&name, e))?;
-        let payload = envelope::open(
-            &self.repo.master.subkeys().encryption,
-            Label::PackHeader,
-            &stored,
-        )
-        .map_err(|e| damage(name.as_str(), "bad-header", &e.to_string()))?;
-        let header = Header::parse(&payload, len - 4 - header_len)
-            .map_err(|e| damage(name.as_str(), "bad-header", &e.to_string()))?;
+        let header =
+            crate::repo::audit::header(&self.repo.backend, &self.repo.master.subkeys(), &name)?;
         if let Some((object, expected)) = self.headers.get(id)
             && expected != &header.blobs
         {

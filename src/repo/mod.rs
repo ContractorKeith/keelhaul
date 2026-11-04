@@ -7,3 +7,6 @@ pub mod objects;
 
 mod snapshots;
 pub use snapshots::SnapshotList;
+pub(crate) mod audit;
+
+pub mod trees;

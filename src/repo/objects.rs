@@ -7,22 +7,9 @@ use crate::{
 
 impl<B: Backend> Repository<B> {
     pub fn read_object(&self, name: &ObjectName, label: Label) -> Result<Vec<u8>, Error> {
-        let stored = self.backend.read(name).map_err(|e| missing(name, e))?;
-        let id = name
-            .as_str()
-            .rsplit('/')
-            .next()
-            .expect("object names have a component");
-        if blake3::hash(&stored).to_hex().as_str() != id {
-            return Err(damage(
-                name.as_str(),
-                "hash-mismatch",
-                "stored object ID differs",
-            ));
-        }
-        envelope::open(&self.master.subkeys().encryption, label, &stored)
-            .map_err(|e| damage(name.as_str(), "undecryptable", &e.to_string()))
+        super::audit::object(&self.backend, &self.master.subkeys(), name, label)
     }
+
     pub fn write_object(
         &self,
         directory: &str,

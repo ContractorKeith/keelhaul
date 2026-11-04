@@ -138,3 +138,25 @@ pub fn run<B: Backend>(backend: B) {
     let entries = keelhaul::ops::listing::ls(&repo, "latest", None).unwrap();
     assert!(!entries.is_empty());
 }
+
+/// Small mixed fixture for repeated damage tests, with chunks shared by files/snapshots.
+#[allow(
+    dead_code,
+    reason = "used by the damage harness, not round-trip targets"
+)]
+pub fn damage_fixture(root: &Path) {
+    fs::create_dir_all(root.join("nested/empty")).unwrap();
+    let mut bytes = vec![0; 600_000];
+    for n in 0..5 {
+        blake3::Hasher::new()
+            .update(&[n])
+            .finalize_xof()
+            .fill(&mut bytes);
+        fs::write(root.join(format!("file{n}")), &bytes).unwrap();
+        if n == 0 {
+            fs::write(root.join("nested/shared"), &bytes).unwrap();
+        }
+    }
+    fs::write(root.join("empty"), []).unwrap();
+    symlink("file0", root.join("link")).unwrap();
+}

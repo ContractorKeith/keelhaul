@@ -9,33 +9,16 @@ use crate::{
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-#[derive(Debug, Serialize)]
-pub struct Damaged {
-    pub object: String,
-    pub problem: String,
-}
 #[derive(Debug, Default, Serialize)]
 pub struct Report {
     pub restored: u64,
-    pub damaged: Vec<Damaged>,
+    #[serde(rename = "damage")]
+    pub damaged: Vec<crate::damage::Damage>,
 }
 impl Report {
     pub(super) fn damage(&mut self, error: Error) -> Result<(), Error> {
-        match error {
-            Error::Damage {
-                object,
-                problem,
-                detail,
-            } => {
-                eprintln!("damage: {object}: {problem}: {detail}");
-                self.damaged.push(Damaged {
-                    object,
-                    problem: format!("{problem}: {detail}"),
-                });
-                Ok(())
-            }
-            other => Err(other),
-        }
+        self.damaged.push(crate::damage::Damage::from_error(error)?);
+        Ok(())
     }
 }
 pub fn restore<B: Backend>(
@@ -53,7 +36,7 @@ pub fn restore_for_host<B: Backend>(
     includes: &[PathBuf],
     host: Option<&str>,
 ) -> Result<Report, Error> {
-    let (_, snapshot) = repo.select_snapshot_for_host(selector, host)?;
+    let (snapshot_id, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
     let mut report = Report::default();
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
@@ -85,7 +68,16 @@ pub fn restore_for_host<B: Backend>(
         })();
         match outcome {
             Ok(()) => report.restored += 1,
-            Err(e) => report.damage(e)?,
+            Err(e) => {
+                report.damage(e)?;
+                if matches!(item.entry.node, Node::File { .. }) {
+                    report.damaged.push(crate::damage::Damage::file(
+                        &format!("snapshots/{snapshot_id}"),
+                        &Path::new("/").join(&item.path),
+                        "dangling-reference",
+                    ));
+                }
+            }
         }
     }
     for item in items.iter().rev() {
@@ -94,5 +86,9 @@ pub fn restore_for_host<B: Backend>(
         }
     }
     preflight.restore_mtimes()?;
+    report.damaged.sort_by(|a, b| {
+        (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
+    });
+    report.damaged.dedup();
     Ok(report)
 }

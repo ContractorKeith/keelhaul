@@ -61,3 +61,8 @@ encoding and decoding; the backup/restore regression uses those names on disk.
 M2 review round 1 corrected the tree file size to 15 bytes and regenerated its
 pack, index and snapshot references. Vector tests now check file sizes against
 pack chunk raw lengths and compare the decrypted tree to `tree.json`.
+
+The key-slot `check` field was added in M3; recomputed by
+`cargo test --locked --lib crypto::slot_checks_tests::add_slot_checks -- --ignored`.
+That command preserves the original wrapping envelopes and adds the new master-derived
+check subkey to `subkeys.json`. The M1 independent checks above predate this field.

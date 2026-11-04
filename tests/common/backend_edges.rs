@@ -176,7 +176,24 @@ pub fn foreign_depth(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
         ));
     }
     for kind in Kind::ALL {
-        assert!(b.list_foreign(kind).unwrap().is_empty());
+        for entry in b.list_foreign(kind).unwrap() {
+            // Directory-aware backends expose the parent as a note, never its children.
+            assert!(
+                [
+                    "keys/sub",
+                    "index/sub",
+                    "snapshots/sub",
+                    "locks/sub",
+                    "data/ab/sub"
+                ]
+                .contains(&entry.raw.as_str()),
+                "{entry:?}"
+            );
+            assert!(
+                !entry.deletable,
+                "directory must not be removable as a file: {entry:?}"
+            );
+        }
     }
     assert_eq!(b.read(&config).unwrap(), b"preserve");
     b.delete(&config).unwrap();

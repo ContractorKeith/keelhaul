@@ -79,34 +79,7 @@ impl<B: Backend> Repository<B> {
             BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
             other => Error::Backend(other),
         })?;
-        let mut entries = backend.list(Kind::Keys)?;
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        let total = entries.len();
-        let mut unreadable = Vec::new();
-        let mut master = None;
-        for entry in entries {
-            let bytes = backend.read(&entry.name)?;
-            // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
-            let Ok(slot) = KeySlot::parse(&bytes) else {
-                unreadable.push(entry.name.to_string());
-                continue;
-            };
-            if let Ok(key) = slot::unwrap(&slot, secret) {
-                master = Some(key);
-                break;
-            }
-        }
-        let master = master.ok_or_else(|| {
-            if unreadable.is_empty() {
-                Error::WrongSecret
-            } else {
-                Error::WrongSecretUnreadable {
-                    unreadable: unreadable.len(),
-                    total,
-                    objects: unreadable.join(", "),
-                }
-            }
-        })?;
+        let master = Self::unlock(&backend, secret)?;
         let payload =
             envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {
                 let problem = if matches!(e, envelope::Error::Undecryptable) {
@@ -122,6 +95,50 @@ impl<B: Backend> Repository<B> {
             config,
             master,
         })
+    }
+
+    /// Unlock independently of config so audits can collect config damage too.
+    pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
+        let mut entries = backend.list(Kind::Keys)?;
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        let total = entries.len();
+        let mut unreadable = Vec::new();
+        let mut master = None;
+        let mut bad_check = None;
+        for entry in entries {
+            let bytes = backend.read(&entry.name)?;
+            // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
+            let Ok(slot) = KeySlot::parse(&bytes) else {
+                unreadable.push(entry.name.to_string());
+                continue;
+            };
+            match slot::unwrap(&slot, secret) {
+                Ok(key) => {
+                    master = Some(key);
+                    break;
+                }
+                Err(slot::Error::CheckMismatch) => bad_check = Some(entry.name.to_string()),
+                Err(_) => {}
+            }
+        }
+        master.ok_or_else(|| {
+            if let Some(object) = bad_check {
+                return damage(&object, "hash-mismatch", "key slot check differs");
+            }
+            if unreadable.is_empty() {
+                Error::WrongSecret
+            } else {
+                Error::WrongSecretUnreadable {
+                    unreadable: unreadable.len(),
+                    total,
+                    objects: unreadable.join(", "),
+                }
+            }
+        })
+    }
+
+    pub(crate) fn subkeys(&self) -> crate::crypto::keys::Subkeys {
+        self.master.subkeys()
     }
 
     pub fn add_key(&self, secret: &Secret) -> Result<String, Error> {

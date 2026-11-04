@@ -30,6 +30,24 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         format!("created repository {}", repo.config.id),
                     )
                 }
+                Command::Check | Command::Verify { .. } => {
+                    let report = match command {
+                        Command::Check => crate::ops::check::check_backend(&backend, &secret)?,
+                        Command::Verify { subset } => {
+                            crate::ops::verify::verify_backend(&backend, &secret, subset)?
+                        }
+                        _ => unreachable!("audit dispatch"),
+                    };
+                    if cli.json {
+                        println!("{}", serde_json::to_string(&report)?);
+                    } else {
+                        report.text();
+                    }
+                    if !report.damage.is_empty() {
+                        super::backup::completed_damage()?;
+                    }
+                    return Ok(());
+                }
                 Command::Key { command } => {
                     let repo = Repository::open(backend, &secret)?;
                     match command {
@@ -69,7 +87,14 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 | Command::Snapshots { .. }
                 | Command::Ls { .. }
                 | Command::Restore { .. }) => {
-                    let repo = Repository::open(backend, &secret)?;
+                    let restoring = matches!(command, Command::Restore { .. });
+                    let repo = match Repository::open(backend, &secret) {
+                        Ok(repo) => repo,
+                        Err(error) if restoring => {
+                            return super::audit::restore_failure(error, cli.json);
+                        }
+                        Err(error) => return Err(error.into()),
+                    };
                     super::backup::run(&repo, command, cli.json)?;
                     return Ok(());
                 }

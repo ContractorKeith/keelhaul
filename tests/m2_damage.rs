@@ -90,7 +90,7 @@ fn damaged_blob_has_no_final_or_temp_file_and_neighbor_survives() {
     repo.backend.plant_raw(name.as_str(), &bytes).unwrap();
     let target = tempfile::tempdir().unwrap();
     let report = restore(&repo, "latest", target.path(), &[]).unwrap();
-    assert_eq!(report.damaged.len(), 1);
+    assert_eq!(report.damaged.len(), 2);
     let restored = target
         .path()
         .join(scratch_root.as_path().strip_prefix("/").unwrap());
@@ -183,7 +183,7 @@ fn unreadable_tree_skips_subtree_and_missing_blob_skips_only_affected_file() {
         tampered_snapshot(&repo, root);
         let target = scratch_root.as_path().join("out");
         let report = restore(&repo, "latest", &target, &[]).unwrap();
-        assert_eq!(report.damaged.len(), 1);
+        assert_eq!(report.damaged.len(), if missing_tree { 1 } else { 2 });
         let restored = target.join(source.strip_prefix("/").unwrap());
         assert!(!restored.join("file").exists());
         if missing_tree {

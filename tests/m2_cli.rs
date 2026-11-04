@@ -76,7 +76,7 @@ fn json_contract_filters_ls_include_conflict_and_damage_exit() {
             "--json",
         ],
     ));
-    assert_eq!(output, serde_json::json!({"restored":2,"damaged":[]}));
+    assert_eq!(output, serde_json::json!({"restored":2,"damage":[]}));
     let recorded = snapshots[0]["paths"][0].as_str().unwrap();
     assert_eq!(
         std::fs::read(target.join(recorded.trim_start_matches('/')).join("file")).unwrap(),
@@ -126,7 +126,7 @@ fn json_contract_filters_ls_include_conflict_and_damage_exit() {
         String::from_utf8_lossy(&damaged.stderr)
     );
     let report: Value = serde_json::from_slice(&damaged.stdout).unwrap();
-    assert_eq!(report["damaged"].as_array().unwrap().len(), 1);
+    assert_eq!(report["damage"].as_array().unwrap().len(), 2);
     assert!(
         !root
             .join("damaged")

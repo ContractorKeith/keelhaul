@@ -17,15 +17,15 @@ pub(super) fn scan(root: &Path, kind: Kind) -> Result<Vec<ScannedEntry>, Backend
     if kind == Kind::Data {
         for child in children(root, &directory, &mut entries)? {
             let path = child.path();
-            let Some(shard) = child.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            if !super::valid_hex(&shard, 2) {
-                continue;
-            }
+            let valid_shard = child
+                .file_name()
+                .to_str()
+                .is_some_and(|s| super::valid_hex(s, 2));
             match fs::metadata(&path) {
-                Ok(metadata) if metadata.is_dir() => scan_leaves(root, &path, kind, &mut entries)?,
-                Ok(_) => {}
+                Ok(metadata) if valid_shard && metadata.is_dir() => {
+                    scan_leaves(root, &path, kind, &mut entries)?
+                }
+                Ok(metadata) => record(root, &path, Some(metadata), None, &mut entries)?,
                 Err(error) if broken_link(&path, &error) => {
                     record(root, &path, None, None, &mut entries)?
                 }
@@ -56,7 +56,19 @@ fn scan_leaves(
                     .filter(|name| name.kind() == kind);
                 record(root, &path, Some(metadata), object, entries)?;
             }
-            Ok(_) => {} // Directories at object depth are never traversed.
+            Ok(metadata) => {
+                // Layout directories are traversed by their own kind. Object-depth
+                // directories are foreign entries; never descend into them.
+                if kind == Kind::Config
+                    && child.file_name().to_str().is_some_and(|n| {
+                        matches!(n, "keys" | "data" | "index" | "snapshots" | "locks")
+                    })
+                    && metadata.is_dir()
+                {
+                    continue;
+                }
+                record(root, &path, Some(metadata), None, entries)?;
+            }
             Err(error) if broken_link(&path, &error) => record(root, &path, None, None, entries)?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(at(&path, error)),
@@ -116,7 +128,7 @@ fn record(
         object,
         foreign: ForeignEntry {
             raw,
-            deletable,
+            deletable: deletable && !metadata.is_dir(),
             size: metadata.len(),
             modified: metadata.modified().ok(),
         },

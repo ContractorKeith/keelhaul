@@ -93,4 +93,18 @@ grep -q '"data_blobs_added":0' "$scratch/second.json"
 cmp "$fixture/nested/random3" "$scratch/single$fixture/nested/random3"
 test ! -e "$scratch/single$fixture/random9"
 
+echo "== M3 check and verify"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" check --json > "$scratch/check.json"
+grep -q '"damage":\[\]' "$scratch/check.json"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" verify --json > "$scratch/verify-clean.json"
+pack="$(find "$scratch/repo/data" -type f | LC_ALL=C sort | head -n 1)"
+# XOR one byte without a Python/jq dependency (Bash arithmetic and portable od/dd).
+byte="$(od -An -tu1 -N1 "$pack" | tr -d ' ')"
+flipped=$((byte ^ 1))
+octal="$(printf '%03o' "$flipped")"
+printf "\\$octal" | dd of="$pack" bs=1 count=1 conv=notrunc 2>/dev/null
+status=0
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" verify --json > "$scratch/damage.json" || status=$?
+test "$status" -eq 3
+grep -q "$(basename "$pack")" "$scratch/damage.json"
 echo "accept: ok"

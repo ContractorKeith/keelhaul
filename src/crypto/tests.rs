@@ -36,7 +36,7 @@ fn generate_vectors() {
         "subkeys",
         json!({
             "master": hex::encode(master.0), "encryption": hex::encode(keys.encryption),
-            "chunk_id": hex::encode(keys.chunk_id), "gear": hex::encode(keys.gear),
+            "chunk_id": hex::encode(keys.chunk_id), "gear": hex::encode(keys.gear), "key_slot_check":hex::encode(keys.key_slot_check),
         }),
     );
     let vectors: Vec<_> = Label::ALL.into_iter().map(|label| {
@@ -62,6 +62,7 @@ fn generate_vectors() {
         slot.wrapped = BASE64_STANDARD.encode(
             envelope::seal_with_nonce(&kek, Label::KeySlot, &master.0, &fixed_nonce()).unwrap(),
         );
+        slot.check = slot::check(&slot, &master.subkeys().key_slot_check).unwrap();
         let secret_value = match secret {
             Secret::Password(pw) => pw,
             Secret::KeyFile(bytes) => hex::encode(bytes),
@@ -91,6 +92,7 @@ fn subkey_vector() {
         ("encryption", keys.encryption),
         ("chunk_id", keys.chunk_id),
         ("gear", keys.gear),
+        ("key_slot_check", keys.key_slot_check),
     ] {
         assert_eq!(hex::encode(key), v[name].as_str().unwrap());
     }
