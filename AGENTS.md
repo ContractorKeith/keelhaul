@@ -12,7 +12,7 @@ checklist in §10.
 
 ## Status
 
-Planned, no code yet (2026-11-04). Milestones M0–M8 are GitHub issues #1–#9.
+M0 harness implemented (2026-11-04); M1–M8 pending. Milestones are GitHub issues #1–#9.
 
 ## Commands
 
