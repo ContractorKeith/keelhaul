@@ -8,16 +8,22 @@ use keelhaul::{
     },
     secret::Secret,
 };
-use std::{collections::HashSet, ffi::OsString, fs, os::unix::ffi::OsStringExt};
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStringExt;
+use std::{collections::HashSet, ffi::OsString, fs};
 #[test]
 fn shared_damaged_chunk_names_every_raw_path_and_snapshot_and_good_file_restores() {
     let scratch = tempfile::tempdir().unwrap();
     let source = fs::canonicalize(scratch.path()).unwrap().join("source");
     fs::create_dir(&source).unwrap();
+    #[cfg(target_os = "linux")]
     let names = [
         OsString::from_vec(vec![b'a', 0xff]),
         OsString::from_vec(vec![b'a', 0xfe]),
     ];
+    // APFS requires valid UTF-8 names. Shared-chunk salvage still runs on macOS.
+    #[cfg(not(target_os = "linux"))]
+    let names = [OsString::from("aé"), OsString::from("aø")];
     for name in &names {
         fs::write(source.join(name), b"shared bad content").unwrap();
     }
@@ -54,8 +60,10 @@ fn shared_damaged_chunk_names_every_raw_path_and_snapshot_and_good_file_restores
     assert!(
         files
             .iter()
-            .all(|d| d.detail.contains("snapshot snapshots/") && d.detail.contains("path b64:"))
+            .all(|d| d.detail.contains("snapshot snapshots/"))
     );
+    #[cfg(target_os = "linux")]
+    assert!(files.iter().all(|d| d.detail.contains("path b64:")));
     assert_eq!(
         report
             .damage
