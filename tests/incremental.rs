@@ -290,6 +290,8 @@ fn excludes_golden_and_cli_exclude_file_comments() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("excluded by pattern"));
     assert_eq!(repo.snapshots().unwrap().len(), 1);
 }
+#[path = "common/incremental_damage.rs"]
+mod damage_review;
 #[path = "common/incremental_edges.rs"]
 mod edges;
 #[path = "common/exclude_review.rs"]

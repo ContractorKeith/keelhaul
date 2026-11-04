@@ -67,25 +67,9 @@ pub fn backup(root: &Path) -> Value {
         .unwrap())
 }
 pub fn check(root: &Path) {
-    // M3 supplies structural check after the required rebase. Until then the
-    // restore assertion below proves every committed snapshot is readable.
-    let output = command(root).arg("check").output().unwrap();
-    if output.status.code() != Some(2) {
-        ok(output);
-    } else {
-        let snapshots = ok(command(root).arg("snapshots").output().unwrap());
-        for snapshot in snapshots.as_array().unwrap() {
-            let target = root.join("check-out");
-            ok(command(root)
-                .arg("restore")
-                .arg(snapshot["id"].as_str().unwrap())
-                .arg("--target")
-                .arg(&target)
-                .output()
-                .unwrap());
-            fs::remove_dir_all(target).unwrap();
-        }
-    }
+    // Notes about orphan packs/indexes are allowed; any nonzero exit is failure.
+    let report = ok(command(root).arg("check").output().unwrap());
+    assert!(report["damage"].as_array().unwrap().is_empty());
 }
 pub fn restored(root: &Path) {
     let target = root.join("out");
