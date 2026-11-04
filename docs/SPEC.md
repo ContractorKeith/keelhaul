@@ -11,7 +11,8 @@ the same PR.
 
 Conventions: integers in binary framing are unsigned little-endian. `hex` is lowercase
 hexadecimal. `b64` is standard base64 with padding (RFC 4648 §4). Times are RFC 3339 UTC
-with nanoseconds, `2026-11-04T14:03:22.123456789Z`. JSON is UTF-8, RFC 8259. Readers MUST
+with exactly nine fractional digits and a `Z` suffix, `2026-11-04T14:03:22.123456789Z`;
+readers refuse any other form. JSON is UTF-8, RFC 8259. Readers MUST
 ignore JSON object members they do not know; v1 writers MUST NOT write members not listed
 here. Sizes: KiB = 1024 bytes, MiB = 1024 KiB.
 
@@ -114,8 +115,10 @@ what the envelope is, so a valid envelope moved to the wrong place fails to decr
 Except for key slots, the decrypted plaintext starts with a one-byte compression flag:
 `0x00` raw, `0x01` one zstd frame. Any other flag value is damage. The **payload** is the
 remaining bytes, decompressed when the flag is `0x01`. A writer compresses and uses
-`0x01` only when the compressed bytes are shorter than the raw ones. A reader MUST reject
-a zstd frame that decompresses to more than 64 MiB.
+`0x01` only when the compressed bytes are shorter than the raw ones, so a `0x01` envelope
+never holds an empty payload. A reader MUST reject a zstd frame that decompresses to more
+than 64 MiB or to zero bytes, a frame whose window log exceeds 27, and any bytes after the
+single frame.
 
 ## 5. Config
 
@@ -132,8 +135,10 @@ a zstd frame that decompresses to more than 64 MiB.
 ```
 
 A reader MUST refuse any `version` other than 1, and any unknown `chunker.alg`, with an
-error naming the version or algorithm found. `id` names the repository in logs and
-lock objects; it is not secret.
+error naming the version or algorithm found. `chunker` min/avg/max MUST equal the values
+above for `fastcdc-gear-keyed-v1`. `pack_target` is writer policy; readers accept any value
+from 1 MiB to 256 MiB inclusive and refuse others as damage. `id` names the repository in
+logs and lock objects; it is not secret.
 
 ## 6. Chunking, chunk IDs, blobs
 
