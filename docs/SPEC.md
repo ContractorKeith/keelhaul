@@ -256,6 +256,8 @@ A tree blob's payload describes one directory:
   single non-empty path component: no `/`, no NUL byte, not `.` or `..`. A reader MUST
   treat a violating name as damage and never create it.
 - Entries are sorted by raw name bytes, ascending, with no duplicates.
+- Trees have no depth limit. Readers walk them iteratively and treat a tree that names one
+  of its own ancestors as damage.
 - `mode` holds only the permission bits (`0o7777` mask).
 - `user` and `group` may be absent when the IDs have no names.
 - `content` lists chunk IDs in file order. Their `raw_length`s sum to `size`.
@@ -286,8 +288,10 @@ A snapshot object is an envelope (label `keelhaul/snapshot`) whose payload is:
 ```
 
 `paths` are absolute, cleaned and sorted. The root tree has one entry per backed-up path,
-named by the path with each `/` replaced by `%2F` and `%` replaced by `%25`. Restore
-reverses that encoding to rebuild the original path. `files_skipped` counts entries the
+named by the path with every `%` replaced by `%25` first, then every `/` replaced by
+`%2F` (so `/a%2Fb` becomes `%2Fa%252Fb`). Restore reverses that encoding (`%2F` → `/`, then
+`%25` → `%`) to rebuild the original path; any other `%` sequence in a root entry name is
+damage. `files_skipped` counts entries the
 backup could not read (permission denied, vanished mid-walk) or did not store (sockets,
 FIFOs, devices). Each one is warned about on stderr and listed under `skipped` in
 `backup --json`. A skipped entry never aborts the backup. A snapshot ID is shown by its
