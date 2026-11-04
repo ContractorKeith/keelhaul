@@ -30,7 +30,7 @@ metadata.
 
 | Platform | Ships | Review on | Notes |
 |---|---|---|---|
-| Linux | yes | Omarchy | Docker e2e (MinIO, openssh-server) runs here and in CI |
+| Linux | yes | Omarchy | Docker e2e (versitygw, openssh-server) runs here and in CI |
 | macOS | yes | Mac Studio | no Docker e2e; APFS is case- and normalisation-insensitive; `/var` → `/private/var` symlink |
 | Windows | no | | |
 

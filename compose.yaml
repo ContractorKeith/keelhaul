@@ -1,0 +1,29 @@
+services:
+  s3:
+    image: versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
+    command: ['--access', 'keelhaul-test', '--secret', 'keelhaul-test-password', '--health', '/health', 'posix', '/data']
+    ports:
+      - '127.0.0.1:7070:7070'
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:7070/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  sshd:
+    image: lscr.io/linuxserver/openssh-server:version-10.2_p1-r0@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4
+    environment:
+      USER_NAME: keelhaul
+      PUBLIC_KEY_FILE: /scratch/authorized_keys
+      PASSWORD_ACCESS: 'false'
+      SUDO_ACCESS: 'false'
+    ports:
+      - '127.0.0.1:2222:2222'
+    volumes:
+      # M7 creates .tmp/sshd/authorized_keys from a scratch test key.
+      - ./.tmp/sshd:/scratch:ro
+      - sshd-config:/config
+volumes:
+  s3-data:
+  sshd-config:

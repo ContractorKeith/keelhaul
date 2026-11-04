@@ -56,7 +56,7 @@ completes.
 | 15 | Locks (shared/exclusive, refresh, stale, self-check), `unlock` | v1 | M5 | SPEC §11 |
 | 16 | `forget` with retention policy, `--dry-run`, `--prune` | v1 | M5 | grouped by host + paths |
 | 17 | `prune` with repack, SIGKILL loop for prune | v1 | M5 | SPEC §14 |
-| 18 | S3-compatible backend (rusty-s3 + ureq), MinIO e2e | v1 | M6 | AWS_* env credentials |
+| 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials |
 | 19 | SFTP backend over system `ssh -s sftp`, own SFTP v3 client, sshd e2e | v1 | M7 | honours `~/.ssh/config` |
 | 20 | `--json` on every command, exit codes 0/1/2/3/4 | v1 | M0–M5 | each milestone for its commands |
 | 21 | Release binaries (linux x64/arm64, macOS arm64), Homebrew formula, crates.io | v1 | M8 | |
@@ -86,7 +86,7 @@ src/
 tests/               integration tests against the in-memory and local backends
 testdata/vectors/    SPEC §12 vectors (JSON)
 scripts/accept.sh    the acceptance (§8)
-compose.yaml         MinIO and openssh-server for e2e
+compose.yaml         versitygw and openssh-server for e2e
 ```
 
 Rules that hold the shape:
@@ -188,13 +188,13 @@ run in parallel as soon as their dependencies merge.
 
 | M | Deliverable | Depends on | Done when (what the e2e asserts) |
 |---|---|---|---|
-| M0 | Cargo package, lint policy, CI (Linux + macOS), `scripts/accept.sh`, Backend trait + local + memory backends, backend conformance suite, test-vector loader, `compose.yaml` (MinIO, openssh-server), `version` | – | accept passes; conformance suite green on local and memory; atomic write leaves no partial object visible |
+| M0 | Cargo package, lint policy, CI (Linux + macOS), `scripts/accept.sh`, Backend trait + local + memory backends, backend conformance suite, test-vector loader, `compose.yaml` (versitygw, openssh-server), `version` | – | accept passes; conformance suite green on local and memory; atomic write leaves no partial object visible |
 | M1 | Subkeys, envelope, password and key-file slots, config, `init`, `key add/list/remove`, vectors §3–§5 | M0 | init → key add → remove original → open with new secret; wrong secret exits 1; refusing the last slot; a tampered slot or config is refused |
 | M2 | Gear and chunker, blobs, pack writer and reader, index, tree, snapshot, `backup`, `snapshots`, `ls`, `restore`, vectors §6–§10 | M1 | back up a seeded fixture tree (binary, empty, sparse-ish, unicode and non-UTF-8 names, symlinks, hardlinks, empty dirs) → restore → byte-for-byte and metadata equal; second identical backup adds zero data blobs; single-file `--include` |
 | M3 | `check`, `verify --subset`, damage harness, restore refuses damaged files | M2 | harness: seeded N corruptions of every object kind; verify lists exactly the damaged objects (exit 3), check lists exactly the damaged metadata objects; restore writes no wrong bytes and restores every undamaged file; clean repo exits 0 |
 | M4 | Parent-snapshot change detection, excludes, `--one-file-system`, parallel pipeline, index flush, fault backend, backup SIGKILL loop | M2 | incremental reads only changed files (counter); excludes honoured; kill loop: after each SIGKILL `check` passes (orphans allowed), rerun completes and reuses flushed blobs, restore matches |
 | M5 | Locks, `unlock`, `forget` + retention policy, `prune` + repack, prune SIGKILL loop | M3, M4 | policy golden over a synthetic year of snapshots; prune frees the forgotten data and `verify` stays clean; shared vs exclusive conflict exits 4; stale-lock self-check aborts a snapshot; prune kill loop leaves `check` clean |
-| M6 | S3 backend, MinIO e2e in CI and locally | M0 | conformance suite and the M2 round trip pass against MinIO |
+| M6 | S3 backend, versitygw e2e in CI and locally | M0 | conformance suite and the M2 round trip pass against versitygw |
 | M7 | SFTP backend: spawn `ssh -s sftp`, SFTP v3 client, sshd e2e | M0 | conformance suite and the M2 round trip pass against the openssh-server container through an `ssh_config` Host alias |
 | M8 | Release workflow, Homebrew formula, crates.io metadata, README usage, SPEC frozen as v1 | all | release dry-run builds three targets with checksums; `brew install` from the tap on both boxes; `cargo publish --dry-run` clean |
 
@@ -219,7 +219,7 @@ skip the round-trip assertion and add it in a follow-up comment on M2's issue.
   random delay drawn from a seeded RNG, 50 iterations in CI and 500 with
   `KEELHAUL_SOAK=1`. After each kill, `check` must exit 0 (notes allowed), and the next
   run must complete and restore byte for byte.
-- **Docker e2e** (M6, M7): `compose.yaml` starts MinIO and openssh-server. These tests
+- **Docker e2e** (M6, M7): `compose.yaml` starts versitygw and openssh-server. These tests
   run when `KEELHAUL_E2E=1` and fail, never skip, if Docker is unreachable. Linux CI runs
   them. macOS CI runs everything else.
 - `scripts/accept.sh` runs fmt, clippy with `-D warnings`, tests, a release build, then a

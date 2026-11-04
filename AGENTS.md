@@ -12,7 +12,7 @@ checklist in §10.
 
 ## Status
 
-Planned, no code yet (2026-11-04). Milestones M0–M8 are GitHub issues #1–#9.
+M0 harness implemented (2026-11-04); M1–M8 pending. Milestones are GitHub issues #1–#9.
 
 ## Commands
 
@@ -21,7 +21,7 @@ scripts/accept.sh                       # the acceptance: worker, reviewer and C
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked                     # unit, property, conformance, damage harness (in-memory + local)
-KEELHAUL_E2E=1 cargo test --locked --test e2e   # needs `docker compose up -d` (MinIO, sshd); fails if Docker is down
+KEELHAUL_E2E=1 cargo test --locked --test e2e   # needs `docker compose up -d` (versitygw, sshd); fails if Docker is down
 KEELHAUL_SOAK=1 cargo test --locked --release --test crash   # 500-iteration crash loops
 cargo build --release                   # target/release/keelhaul
 ```

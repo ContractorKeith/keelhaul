@@ -4,7 +4,7 @@ A deduplicating, encrypted backup tool. keelhaul backs up directories to local d
 or S3-compatible storage, and never stores the same data twice. Every snapshot is
 encrypted and can be verified byte for byte.
 
-**Status:** planned, no code yet. See [`docs/PLAN.md`](docs/PLAN.md) for the build plan
+**Status:** M0 storage harness and `version` implemented; backup commands pending. See [`docs/PLAN.md`](docs/PLAN.md) for the build plan
 and [`docs/SPEC.md`](docs/SPEC.md) for the repository format.
 
 ```sh
