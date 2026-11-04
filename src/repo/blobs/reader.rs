@@ -12,6 +12,34 @@ impl<B: Backend> BlobStore<'_, B> {
             self.index.get(&(kind, id.into())).cloned().ok_or_else(|| {
                 damage(id, "dangling-reference", "blob is absent from live index")
             })?;
+        let mut result = self.read_location(id, &loc);
+        if !matches!(result, Err(Error::Damage { .. })) {
+            return result;
+        }
+        let mut alternatives = self
+            .headers
+            .iter()
+            .filter(|(pack, _)| *pack != &loc.pack)
+            .flat_map(|(pack, (_, blobs))| {
+                blobs
+                    .iter()
+                    .filter(move |b| b.kind == kind && b.id == id)
+                    .map(move |blob| Location {
+                        pack: pack.clone(),
+                        blob: blob.clone(),
+                    })
+            })
+            .collect::<Vec<_>>();
+        alternatives.sort_by(|a, b| a.pack.cmp(&b.pack));
+        for alternative in alternatives {
+            result = self.read_location(id, &alternative);
+            if !matches!(result, Err(Error::Damage { .. })) {
+                return result;
+            }
+        }
+        result
+    }
+    fn read_location(&mut self, id: &str, loc: &Location) -> Result<Vec<u8>, Error> {
         self.verify_pack(&loc.pack)?;
         let name = pack_name(&loc.pack)?;
         let stored = self

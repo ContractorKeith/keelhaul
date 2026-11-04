@@ -93,6 +93,12 @@ fn subset_does_not_condemn_a_file_with_an_untested_copy_and_orphans_do_not_hide_
     let report = verify(&repo, Some(subset)).unwrap();
     assert!(report.damage.iter().any(|d| d.object == loc.blob.id));
     assert!(!report.damage.iter().any(|d| d.kind == "file"));
+    // Force the failing copy to be first: a reader must try the healthy live copy.
+    let mut reader = BlobStore::load(&repo).unwrap();
+    reader
+        .index
+        .insert((BlobKind::Data, loc.blob.id.clone()), loc.clone());
+    assert_eq!(reader.read(BlobKind::Data, &loc.blob.id).unwrap(), b"hello");
     // Once both indexed copies fail, every referring file is damaged.
     let copy_name = pack_name(&copy).unwrap();
     let mut bytes = repo.backend.read(&copy_name).unwrap();
@@ -107,6 +113,10 @@ fn subset_does_not_condemn_a_file_with_an_untested_copy_and_orphans_do_not_hide_
             .count(),
         1
     );
+    assert!(matches!(
+        reader.read(BlobKind::Data, &loc.blob.id),
+        Err(keelhaul::repo::Error::Damage { .. })
+    ));
     assert!(
         repo.backend
             .list(Kind::Index)
