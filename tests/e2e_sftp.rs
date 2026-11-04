@@ -101,6 +101,7 @@ fn sftp_e2e_conformance_and_failures() {
     let doomed_root = format!("{root}-interrupted");
     let doomed =
         SftpBackend::with_client(doomed_root.clone(), connect(&config_path, &doomed_root)).unwrap();
+    #[cfg(target_os = "linux")]
     let pid = doomed.child_pid().unwrap();
     let mut observer = connect(&config_path, &doomed_root);
     std::thread::scope(|scope| {
