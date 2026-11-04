@@ -1,0 +1,26 @@
+{
+  "excludes": [],
+  "host": "vector-host",
+  "parent": null,
+  "paths": [
+    "/fixture"
+  ],
+  "program": "keelhaul 0.1.0",
+  "summary": {
+    "bytes_added": 437,
+    "bytes_processed": 15,
+    "data_blobs_added": 1,
+    "dirs": 0,
+    "files_changed": 0,
+    "files_new": 1,
+    "files_skipped": 0,
+    "files_unchanged": 0
+  },
+  "tags": [
+    "test"
+  ],
+  "time": "2026-11-04T14:03:22.123456789Z",
+  "tree": "da84c9f97144eac1775a1940252c5bd812472ddd24b835edc4eb0b39fa379e6d",
+  "username": "vector-user",
+  "version": 1
+}

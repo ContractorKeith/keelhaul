@@ -44,7 +44,7 @@ pub enum Error {
 pub struct Repository<B> {
     pub backend: B,
     pub config: Config,
-    master: MasterKey,
+    pub(super) master: MasterKey,
 }
 
 impl<B: Backend> Repository<B> {
@@ -163,7 +163,7 @@ impl<B: Backend> Repository<B> {
     }
 }
 
-fn damage(object: &str, problem: &'static str, detail: &str) -> Error {
+pub(super) fn damage(object: &str, problem: &'static str, detail: &str) -> Error {
     Error::Damage {
         object: object.into(),
         problem,

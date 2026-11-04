@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 mod repo;
 
@@ -51,6 +52,41 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub(super) enum Command {
     Version,
+    Backup {
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+    Snapshots {
+        #[arg(long)]
+        host: Option<String>,
+        #[arg(long)]
+        tag: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
+    },
+    #[command(
+        about = "List a snapshot; SNAP is a unique hex prefix (at least 8 characters) or latest (newest for this host; --host H selects another host)"
+    )]
+    Ls {
+        snap: String,
+        path: Option<PathBuf>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    #[command(
+        about = "Restore beneath TARGET with original absolute paths relative to it; SNAP is a unique hex prefix (at least 8 characters) or latest (newest for this host; --host H selects another host)"
+    )]
+    Restore {
+        snap: String,
+        #[arg(long)]
+        target: PathBuf,
+        #[arg(long)]
+        include: Vec<PathBuf>,
+        #[arg(long)]
+        host: Option<String>,
+    },
     Init,
     Key {
         #[command(subcommand)]

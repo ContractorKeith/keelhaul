@@ -1,0 +1,23 @@
+{
+  "entries": [
+    {
+      "content": [
+        "96a64b0e21e097784d0d577ccf75b494b92523b2472c2b671e7ac3aabe32b19d"
+      ],
+      "ctime": "2026-11-04T14:03:22.123456789Z",
+      "device": 1,
+      "gid": 1000,
+      "group": "vector-group",
+      "inode": 7,
+      "links": 1,
+      "mode": 420,
+      "mtime": "2026-11-04T14:03:22.123456789Z",
+      "name": "%2Ffixture",
+      "size": 15,
+      "type": "file",
+      "uid": 1000,
+      "user": "vector-user"
+    }
+  ],
+  "version": 1
+}

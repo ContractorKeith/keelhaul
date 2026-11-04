@@ -1,0 +1,8 @@
+{
+  "cases": [
+    { "path": "/tmp/a%2Fb", "name": "%2Ftmp%2Fa%252Fb" },
+    { "path": "/tmp/a%b", "name": "%2Ftmp%2Fa%25b" },
+    { "path": "/tmp/a%25b", "name": "%2Ftmp%2Fa%2525b" },
+    { "path": "/tmp/%", "name": "%2Ftmp%2F%25" }
+  ]
+}

@@ -65,6 +65,14 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         }
                     }
                 }
+                command @ (Command::Backup { .. }
+                | Command::Snapshots { .. }
+                | Command::Ls { .. }
+                | Command::Restore { .. }) => {
+                    let repo = Repository::open(backend, &secret)?;
+                    super::backup::run(&repo, command, cli.json)?;
+                    return Ok(());
+                }
                 Command::Version => unreachable!("version handled above"),
             };
             if cli.json {

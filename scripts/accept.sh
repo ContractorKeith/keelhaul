@@ -7,6 +7,7 @@ set -eu
 cd "$(dirname "$0")/.."
 scratch_root="${TMPDIR:-/tmp}"
 scratch="$(mktemp -d "$scratch_root/keelhaul-accept.XXXXXX")"
+scratch="$(cd "$scratch" && pwd -P)"
 trap 'rm -r "$scratch"' EXIT
 
 echo "== gate"
@@ -42,5 +43,54 @@ grep -q '"kind":"keyfile"' "$scratch/slots.json"
 status=0
 "$bin" -r "$scratch/repo" --password-file "$scratch/password" key list || status=$?
 test "$status" -eq 1
+
+echo "== M2 backup and restore"
+fixture="$scratch/fixture"
+mkdir -p "$fixture/nested/empty"
+: > "$fixture/empty"
+printf 'hardlink contents\n' > "$fixture/hard-a"
+ln "$fixture/hard-a" "$fixture/hard-b"
+dd if=/dev/urandom of="$fixture/nested/random3" bs=1048576 count=3 2>/dev/null
+dd if=/dev/urandom of="$fixture/random9" bs=1048576 count=9 2>/dev/null
+ln -s nested/random3 "$fixture/link"
+if test "$(uname)" = Linux; then
+  raw_name="$(printf 'raw-\377')"
+  printf 'non-UTF-8\n' > "$fixture/$raw_name"
+fi
+chmod 640 "$fixture/hard-a"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --tag accept --json > "$scratch/first.json"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" snapshots --tag accept --json > "$scratch/snapshots.json"
+grep -q '"paths":' "$scratch/snapshots.json"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" restore latest --target "$scratch/out"
+restored="$scratch/out$fixture"
+diff -r "$fixture" "$restored"
+# Portable lstat walk: times are compared to seconds here; Rust tests pin nanoseconds.
+stat_walk() {
+  root="$1"
+  find "$root" -print0 | while IFS= read -r -d '' path; do
+    relative="${path#"$root"}"
+    if test "$(uname)" = Darwin; then
+      details="$(stat -f '%Lp %m' "$path")"
+    else
+      details="$(stat -c '%a %Y' "$path")"
+    fi
+    target=""
+    if test -L "$path"; then target="$(readlink "$path")"; fi
+    printf '%s %s %s\n' "$relative" "$details" "$target"
+  done | LC_ALL=C sort
+}
+stat_walk "$fixture" > "$scratch/before.stat"
+stat_walk "$restored" > "$scratch/after.stat"
+diff "$scratch/before.stat" "$scratch/after.stat"
+if test "$(uname)" = Darwin; then
+  test "$(stat -f '%i' "$restored/hard-a")" = "$(stat -f '%i' "$restored/hard-b")"
+else
+  test "$(stat -c '%i' "$restored/hard-a")" = "$(stat -c '%i' "$restored/hard-b")"
+fi
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --json > "$scratch/second.json"
+grep -q '"data_blobs_added":0' "$scratch/second.json"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" restore latest --target "$scratch/single" --include "$fixture/nested/random3"
+cmp "$fixture/nested/random3" "$scratch/single$fixture/nested/random3"
+test ! -e "$scratch/single$fixture/random9"
 
 echo "accept: ok"
