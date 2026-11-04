@@ -7,11 +7,11 @@ const CHUNK: usize = 32 * 1024;
 impl Client {
     pub fn write_handle(&mut self, handle: &[u8], bytes: &[u8]) -> io::Result<()> {
         let result = self.write_pending(handle, bytes);
-        result.map_err(|error| self.abort(error))
+        self.finish(result)
     }
     pub fn read_handle(&mut self, handle: &[u8], offset: u64, len: u64) -> io::Result<Vec<u8>> {
         let result = self.read_pending(handle, offset, len);
-        result.map_err(|error| self.abort(error))
+        self.finish(result)
     }
     fn write_pending(&mut self, handle: &[u8], bytes: &[u8]) -> io::Result<()> {
         for (batch, chunks) in bytes.chunks(CHUNK * WINDOW).enumerate() {
@@ -23,12 +23,18 @@ impl Client {
                 string(&mut body, chunk);
                 pending.insert(self.send(6, body)?, ());
             }
+            let mut failure = None;
             while !pending.is_empty() {
                 let (id, packet) = self.receive()?;
                 if pending.remove(&id).is_none() {
                     return Err(self.protocol_error("unexpected WRITE request ID"));
                 }
-                status(&packet)?;
+                if let Err(error) = status(&packet) {
+                    failure.get_or_insert(error);
+                }
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
         }
         Ok(())
@@ -61,18 +67,29 @@ impl Client {
                 pending.insert(self.send(5, body)?, (index, count));
             }
             let mut chunks = BTreeMap::new();
+            let mut failure = None;
             while !pending.is_empty() {
                 let (id, packet) = self.receive()?;
                 let Some((index, count)) = pending.remove(&id) else {
                     return Err(self.protocol_error("unexpected READ request ID"));
                 };
-                let mut fields = Fields(payload(&packet, 103)?);
+                let body = match payload(&packet, 103) {
+                    Ok(body) => body,
+                    Err(error) => {
+                        failure.get_or_insert(error);
+                        continue;
+                    }
+                };
+                let mut fields = Fields(body);
                 let data = fields.string()?.to_vec();
                 fields.end()?;
                 if data.is_empty() || data.len() > count as usize {
                     return Err(self.protocol_error("invalid READ data length"));
                 }
                 chunks.insert(index, (data, count));
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
             // A server may legally return short DATA. Reissue its missing suffix.
             for (_, (mut data, count)) in chunks {

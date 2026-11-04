@@ -4,6 +4,8 @@ mod codec;
 mod operations;
 mod response;
 mod scan;
+mod status;
+mod stderr;
 #[cfg(test)]
 mod tests;
 mod transfer;
@@ -39,15 +41,6 @@ impl SftpBackend {
             .lock()
             .map_err(|_| io::Error::other("SFTP client mutex poisoned"))
     }
-    fn finish<T>(&self, result: Result<T, BackendError>) -> Result<T, BackendError> {
-        if result.is_err()
-            && let Ok(mut client) = self.client.lock()
-        {
-            // Semantic backend failures (such as conflicting bytes) also end the child.
-            let _ = client.abort(io::Error::other("SFTP backend operation failed"));
-        }
-        result
-    }
     fn path(&self, name: &str) -> String {
         format!("{}/{name}", self.root)
     }
@@ -73,9 +66,9 @@ impl SftpBackend {
         let path = self.path(name.as_str());
         let mut client = self.client()?;
         let compare = |client: &mut Client| -> Result<bool, BackendError> {
-            match client.read_optional(&path) {
-                Ok(Some(existing)) if existing == bytes => Ok(true),
-                Ok(Some(_)) => Err(BackendError::AlreadyExists(name.clone())),
+            match client.matches_file(&path, bytes) {
+                Ok(Some(true)) => Ok(true),
+                Ok(Some(false)) => Err(BackendError::AlreadyExists(name.clone())),
                 Ok(None) => Ok(false),
                 Err(e) => Err(e.into()),
             }
@@ -106,10 +99,8 @@ impl SftpBackend {
 }
 impl Backend for SftpBackend {
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
-        let result = self
-            .write_object(name, bytes)
-            .map_err(|e| e.context(Some(name), Some(Path::new(&self.path(name.as_str())))));
-        self.finish(result)
+        self.write_object(name, bytes)
+            .map_err(|e| e.context(Some(name), Some(Path::new(&self.path(name.as_str())))))
     }
     fn read(&self, name: &ObjectName) -> Result<Vec<u8>, BackendError> {
         self.read_range(name, 0, u64::MAX)
@@ -121,28 +112,25 @@ impl Backend for SftpBackend {
         len: u64,
     ) -> Result<Vec<u8>, BackendError> {
         let path = self.path(name.as_str());
-        let result = self
-            .client()?
+        self.client()?
             .read_file(&path, offset, len)
-            .map_err(|e| object_error(name, Path::new(&path), e));
-        self.finish(result)
+            .map_err(|e| object_error(name, Path::new(&path), e))
     }
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError> {
         let path = self.path(name.as_str());
-        let result = self
-            .client()?
+        let mut client = self.client()?;
+        let result = client
             .attrs(&path)
-            .and_then(|a| a.size.ok_or_else(|| codec::invalid("missing size")))
-            .map_err(|e| object_error(name, Path::new(&path), e));
-        self.finish(result)
+            .and_then(|a| a.size.ok_or_else(|| codec::invalid("missing size")));
+        client
+            .finish(result)
+            .map_err(|e| object_error(name, Path::new(&path), e))
     }
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError> {
         let path = self.path(name.as_str());
-        let result = self
-            .client()?
+        self.client()?
             .remove(&path)
-            .map_err(|e| object_error(name, Path::new(&path), e));
-        self.finish(result)
+            .map_err(|e| object_error(name, Path::new(&path), e))
     }
     fn delete_foreign(&self, raw: &str) -> Result<(), BackendError> {
         foreign::validate(raw)?;
@@ -150,26 +138,25 @@ impl Backend for SftpBackend {
         Ok(())
     }
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError> {
-        let result = self.scan(kind);
         Ok(self
-            .finish(result)?
+            .scan(kind)?
             .into_iter()
-            .filter_map(|e| {
-                let name = ObjectName::new(&e.raw).ok()?;
+            .filter_map(|entry| {
+                let name = entry.object?;
                 (name.kind() == kind).then_some(Entry {
                     name,
-                    size: e.size,
-                    modified: e.modified,
+                    size: entry.foreign.size,
+                    modified: entry.foreign.modified,
                 })
             })
             .collect())
     }
     fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError> {
-        let result = self.scan(kind);
         Ok(self
-            .finish(result)?
+            .scan(kind)?
             .into_iter()
-            .filter(|e| ObjectName::new(&e.raw).is_err())
+            .filter(|entry| entry.object.is_none())
+            .map(|entry| entry.foreign)
             .collect())
     }
 }

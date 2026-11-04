@@ -2,6 +2,10 @@
 import struct, sys
 r, w = sys.stdin.buffer, sys.stdout.buffer
 mode = sys.argv[1]
+def log(value):
+    if len(sys.argv) > 2:
+        with open(sys.argv[2], 'a') as out: out.write(str(value)+'\n')
+log('spawn')
 def u32(n): return struct.pack('>I', n)
 def string(b): return u32(len(b)) + b
 def packet(t, b):
@@ -25,6 +29,20 @@ pending = []
 while True:
     t,b = read()
     i,b = b[:4],b[4:]
+    log(t)
+    if mode.startswith('backend-'):
+        if t in (7,17) and b == string(b'/repo'):
+            packet(105,i+u32(5)+struct.pack('>Q',0)+u32(0o040755)); continue
+        if mode == 'backend-missing':
+            if t == 11 and b in (string(b'/repo'),string(b'/repo/')): packet(102,i+string(b'h'))
+            elif t == 12: status(i,1)
+            elif t == 4: status(i)
+            else: status(i,2)
+            continue
+        if t in (7,17):
+            packet(105,i+u32(1)+struct.pack('>Q',131072)); continue
+        if t == 3:
+            packet(102,i+string(b'h')); continue
     if mode == 'malformed':
         packet(102,i+u32(999)); continue
     if mode == 'wrongid':
@@ -44,7 +62,9 @@ while True:
         data = bytes((offset+j)%251 for j in range(min(count,777) if mode == 'short' else count))
         pending.append((i,data))
         if len(pending) == 4 or mode == 'short' and offset%32768 != 0:
-            for req,data in reversed(pending): packet(103,req+string(data))
+            for req,data in reversed(pending):
+                if mode == 'read-error': status(req,3)
+                else: packet(103,req+string(data))
             pending.clear()
     elif t == 6:
         assert b[:5] == string(b'h')

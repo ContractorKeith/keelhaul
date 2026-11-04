@@ -5,7 +5,7 @@ use super::{
 };
 use std::{
     collections::BTreeMap,
-    io::{self, Read},
+    io,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     thread::{self, JoinHandle},
 };
@@ -18,6 +18,7 @@ pub struct Client {
     input: ChildStdin,
     output: ChildStdout,
     stderr: Option<JoinHandle<Vec<u8>>>,
+    captured_stderr: Vec<u8>,
     next_id: u32,
     pub posix_rename: bool,
     failed: bool,
@@ -62,21 +63,7 @@ impl Client {
         let mut stderr = child.stderr.take().expect("piped stderr");
         let stderr = thread::Builder::new()
             .name("sftp-stderr".into())
-            .spawn(move || {
-                // Drain continuously, retaining a bounded diagnostic tail.
-                let mut tail = Vec::new();
-                let mut buffer = [0; 4096];
-                while let Ok(count) = stderr.read(&mut buffer) {
-                    if count == 0 {
-                        break;
-                    }
-                    tail.extend_from_slice(&buffer[..count]);
-                    if tail.len() > 65536 {
-                        tail.drain(..tail.len() - 65536);
-                    }
-                }
-                tail
-            });
+            .spawn(move || super::stderr::drain(&mut stderr));
         let stderr = match stderr {
             Ok(thread) => thread,
             Err(error) => {
@@ -91,6 +78,7 @@ impl Client {
             input,
             output,
             stderr: Some(stderr),
+            captured_stderr: Vec::new(),
             next_id: 0,
             posix_rename: false,
             failed: false,
@@ -132,14 +120,15 @@ impl Client {
         self.failed = true;
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let stderr = self
-            .stderr
-            .take()
-            .and_then(|thread| thread.join().ok())
-            .unwrap_or_default();
+        if let Some(stderr) = self.stderr.take() {
+            self.captured_stderr = stderr.join().unwrap_or_default();
+        }
         io::Error::new(
             error.kind(),
-            format!("SFTP: {error}; ssh: {}", String::from_utf8_lossy(&stderr)),
+            format!(
+                "SFTP: {error}; ssh: {}",
+                String::from_utf8_lossy(&self.captured_stderr)
+            ),
         )
     }
     // A failed operation leaves no live child. The next request starts a fresh session.
@@ -163,7 +152,14 @@ impl Client {
         Ok(())
     }
     pub(super) fn finish<T>(&mut self, result: io::Result<T>) -> io::Result<T> {
-        result.map_err(|error| self.abort(error))
+        // A valid STATUS is an operation result; it does not corrupt the stream.
+        result.map_err(|error| {
+            if error.kind() == io::ErrorKind::InvalidData {
+                self.abort(error)
+            } else {
+                error
+            }
+        })
     }
     pub(super) fn send(&mut self, kind: u8, body: Vec<u8>) -> io::Result<u32> {
         if self.failed {
@@ -231,31 +227,4 @@ impl Drop for Client {
     }
 }
 
-pub(super) fn status(packet: &Packet) -> io::Result<()> {
-    if packet.kind != 101 {
-        return Err(codec::invalid("expected SFTP STATUS"));
-    }
-    let mut fields = Fields(&packet.body);
-    let code = fields.u32()?;
-    let message = String::from_utf8_lossy(fields.string()?).into_owned();
-    fields.string()?;
-    fields.end()?;
-    match code {
-        0 => Ok(()),
-        1 => Err(io::ErrorKind::UnexpectedEof.into()),
-        2 => Err(io::Error::new(io::ErrorKind::NotFound, message)),
-        3 => Err(io::Error::new(io::ErrorKind::PermissionDenied, message)),
-        8 => Err(io::Error::new(io::ErrorKind::Unsupported, message)),
-        _ => Err(io::Error::other(format!("SFTP status {code}: {message}"))),
-    }
-}
-pub(super) fn payload(packet: &Packet, kind: u8) -> io::Result<&[u8]> {
-    if packet.kind == 101 {
-        status(packet)?;
-        return Err(codec::invalid("unexpected successful SFTP STATUS"));
-    }
-    if packet.kind != kind {
-        return Err(codec::invalid("unexpected SFTP response type"));
-    }
-    Ok(&packet.body)
-}
+pub(super) use super::status::{payload, status};

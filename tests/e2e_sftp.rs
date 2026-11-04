@@ -3,6 +3,8 @@
 mod backend_edges;
 #[path = "common/backend_suite.rs"]
 mod backend_suite;
+#[path = "common/e2e_sftp_links.rs"]
+mod links;
 use keelhaul::backend::{
     Backend, Kind, ObjectName,
     sftp::{SftpBackend, client::Client, url::SftpUrl},
@@ -79,6 +81,8 @@ fn sftp_e2e_conformance_and_failures() {
             "KEELHAUL_SSH_ARGS",
             format!("-F {}", shell_words::quote(&config_path.to_string_lossy())),
         ));
+
+    links::run(&config_path, &root);
 
     // Independent connections also obey create-once publication.
     let other = SftpBackend::with_client(root.clone(), connect(&config_path, &root)).unwrap();

@@ -23,6 +23,12 @@ impl Client {
         self.finish(result)
     }
     pub fn attrs(&mut self, path: &str) -> io::Result<Attrs> {
+        self.attributes(17, path.as_bytes())
+    }
+    pub(super) fn attrs_raw(&mut self, path: &[u8]) -> io::Result<Attrs> {
+        self.attributes(17, path)
+    }
+    pub fn lstat(&mut self, path: &str) -> io::Result<Attrs> {
         self.attributes(7, path.as_bytes())
     }
     pub fn fstat(&mut self, handle: &[u8]) -> io::Result<Attrs> {
@@ -157,7 +163,7 @@ impl Client {
         self.read_open(handle, offset, len)
     }
     // Absence is a successful probe, avoiding reconnects for every new object.
-    pub fn read_optional(&mut self, path: &str) -> io::Result<Option<Vec<u8>>> {
+    fn open_optional(&mut self, path: &str) -> io::Result<Option<Vec<u8>>> {
         let mut body = Vec::new();
         string(&mut body, path.as_bytes());
         u32_field(&mut body, 1);
@@ -172,7 +178,27 @@ impl Client {
             Ok(fields.string()?.to_vec())
         })();
         let handle = self.finish(result)?;
-        self.read_open(handle, 0, u64::MAX).map(Some)
+        Ok(Some(handle))
+    }
+    pub fn matches_file(&mut self, path: &str, bytes: &[u8]) -> io::Result<Option<bool>> {
+        let Some(handle) = self.open_optional(path)? else {
+            return Ok(None);
+        };
+        let result = (|| {
+            let size = self
+                .fstat(&handle)?
+                .size
+                .ok_or_else(|| codec::invalid("missing file size"))?;
+            if size != bytes.len() as u64 {
+                return Ok(false);
+            }
+            Ok(self.read_handle(&handle, 0, size)? == bytes)
+        })();
+        let result = self.finish(result);
+        let close = self.close(&handle);
+        let matches = result?;
+        close?;
+        Ok(Some(matches))
     }
     fn read_open(&mut self, handle: Vec<u8>, offset: u64, len: u64) -> io::Result<Vec<u8>> {
         let result = (|| {

@@ -17,6 +17,10 @@ impl SftpUrl {
             (&rest[..split], rest[split + 1..].to_owned(), false)
         };
         let host_start = authority.rfind('@').map_or(0, |i| i + 1);
+        // A leading @ has an empty username.
+        if host_start == 1 {
+            return Err(bad());
+        }
         let address = &authority[host_start..];
         let (host, port) = if address.starts_with('[') {
             let end = address.find(']').ok_or_else(bad)?;
@@ -58,7 +62,6 @@ impl SftpUrl {
                 .any(|c| c.is_control() || c.is_whitespace() || c == '/')
             || path.contains('\0')
             || port == Some(0)
-            || (host_start > 0 && host_start == 1)
         {
             return Err(bad());
         }
