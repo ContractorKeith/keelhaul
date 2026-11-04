@@ -63,6 +63,18 @@ pub(super) enum Command {
         paths: Vec<PathBuf>,
         #[arg(long)]
         tag: Vec<String>,
+        #[arg(long)]
+        host: Option<String>,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        force_rehash: bool,
+        #[arg(long)]
+        exclude: Vec<String>,
+        #[arg(long)]
+        exclude_file: Option<PathBuf>,
+        #[arg(long)]
+        one_file_system: bool,
     },
     Snapshots {
         #[arg(long)]

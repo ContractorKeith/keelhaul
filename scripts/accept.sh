@@ -93,6 +93,11 @@ grep -q '"data_blobs_added":0' "$scratch/second.json"
 cmp "$fixture/nested/random3" "$scratch/single$fixture/nested/random3"
 test ! -e "$scratch/single$fixture/random9"
 
+echo "== M4 incremental read counter"
+touch "$fixture/random9"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --json > "$scratch/incremental.json"
+grep -q '"files_read":1' "$scratch/incremental.json"
+
 echo "== M3 check and verify"
 "$bin" -r "$scratch/repo" --key-file "$scratch/key" check --json > "$scratch/check.json"
 grep -q '"damage":\[\]' "$scratch/check.json"

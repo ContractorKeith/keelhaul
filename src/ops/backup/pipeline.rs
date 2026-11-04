@@ -1,0 +1,183 @@
+//! Bounded walker → file workers → assembler → upload workers.
+use super::{Options, Patterns, Skipped, files, parent::Previous, trees::Trees, walk};
+use crate::{
+    backend::Backend,
+    format::{
+        snapshot::Summary,
+        tree::{Entry, Node},
+    },
+    repo::{
+        Error, Repository,
+        blobs::{BlobStore, SealedBlob, Upload},
+    },
+};
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, SyncSender},
+    },
+    thread,
+};
+
+pub(super) enum Status {
+    New,
+    Changed,
+    Unchanged,
+    Other,
+}
+pub(super) enum Event {
+    Blob(SealedBlob),
+    Entry((usize, PathBuf), Box<Entry>, Status),
+    Directory((usize, PathBuf), Box<Entry>, usize),
+    Skip((usize, PathBuf), PathBuf, String),
+    Ignored((usize, PathBuf)),
+    Warning(PathBuf, String),
+    Read,
+}
+pub(super) fn closed() -> Error {
+    Error::Refused("backup pipeline stopped".into())
+}
+pub(super) fn send(sender: &SyncSender<Result<Event, Error>>, event: Event) -> Result<(), Error> {
+    sender.send(Ok(event)).map_err(|_| closed())
+}
+pub(super) struct Output {
+    pub tree: String,
+    pub paths: Vec<String>,
+    pub summary: Summary,
+    pub skipped: Vec<Skipped>,
+    pub files_read: u64,
+}
+pub(super) fn run<B: Backend>(
+    repo: &Repository<B>,
+    mut store: BlobStore<'_, B>,
+    roots: &[(PathBuf, &PathBuf)],
+    strings: &[String],
+    previous: Previous,
+    patterns: &Patterns,
+    options: &Options,
+) -> Result<Output, Error> {
+    let jobs = options.jobs;
+    let seen = Mutex::new(store.index.keys().cloned().collect());
+    let keys = store.worker_keys();
+    let gear = repo.chunker_key();
+    thread::scope(|scope| {
+        let (tasks_tx, tasks_rx) = mpsc::sync_channel(jobs);
+        let tasks_rx = Arc::new(Mutex::new(tasks_rx));
+        let (events_tx, events_rx) = mpsc::sync_channel(jobs);
+        let (uploads_tx, uploads_rx) = mpsc::sync_channel::<Upload>(jobs);
+        let uploads_rx = Arc::new(Mutex::new(uploads_rx));
+        // At most eight packs await a flush. This capacity also allows each
+        // uploader to report failure while the assembler dispatches the batch.
+        let (done_tx, done_rx) = mpsc::sync_channel(jobs + 8);
+        store.upload_pool(uploads_tx, done_rx);
+        for _ in 0..jobs {
+            let receiver = uploads_rx.clone();
+            let done = done_tx.clone();
+            thread::Builder::new().spawn_scoped(scope, move || {
+                loop {
+                    let task = match receiver.lock() {
+                        Ok(rx) => rx.recv(),
+                        Err(_) => return,
+                    };
+                    let Ok(task) = task else {
+                        break;
+                    };
+                    if done
+                        .send(repo.backend.write(&task.name, &task.bytes))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })?;
+            let receiver = tasks_rx.clone();
+            let events = events_tx.clone();
+            let seen = &seen;
+            thread::Builder::new().spawn_scoped(scope, move || {
+                loop {
+                    let task = match receiver.lock() {
+                        Ok(rx) => rx.recv(),
+                        Err(_) => return,
+                    };
+                    let Ok(task) = task else {
+                        break;
+                    };
+                    if let Err(e) = files::read(task, &gear, &keys, seen, &events) {
+                        let _ = events.send(Err(e));
+                        break;
+                    }
+                }
+            })?;
+        }
+        drop(done_tx);
+        drop(tasks_rx);
+        drop(uploads_rx);
+        let walker_events = events_tx.clone();
+        thread::Builder::new().spawn_scoped(scope, move || {
+            if let Err(e) = walk::run(
+                roots,
+                strings,
+                &previous,
+                patterns,
+                options,
+                tasks_tx,
+                walker_events.clone(),
+            ) {
+                let _ = walker_events.send(Err(e));
+            }
+        })?;
+        drop(events_tx);
+        // An early return drops the receivers and store's upload sender, which
+        // releases every blocked send before the scope joins its threads.
+        let mut summary = Summary::default();
+        let mut skipped = Vec::new();
+        let mut files_read = 0;
+        let mut trees = Trees::new(roots);
+        for event in events_rx {
+            match event? {
+                Event::Blob(blob) => store.add_sealed(blob)?,
+                Event::Read => files_read += 1,
+                Event::Directory(key, entry, count) => {
+                    summary.dirs += 1;
+                    trees.directory(key, *entry, count, &mut store)?;
+                }
+                Event::Ignored(key) => trees.complete(key, None, &mut store)?,
+                Event::Warning(path, reason) => {
+                    summary.files_skipped += 1;
+                    skipped.push(super::skipped(&path, reason));
+                }
+                Event::Skip(key, path, reason) => {
+                    summary.files_skipped += 1;
+                    skipped.push(super::skipped(&path, reason));
+                    trees.complete(key, None, &mut store)?;
+                }
+                Event::Entry(path, entry, status) => {
+                    match status {
+                        Status::New => summary.files_new += 1,
+                        Status::Changed => summary.files_changed += 1,
+                        Status::Unchanged => summary.files_unchanged += 1,
+                        Status::Other => {}
+                    }
+                    if let Node::File { size, .. } = entry.node {
+                        summary.bytes_processed += size;
+                    }
+                    trees.complete(path, Some(*entry), &mut store)?;
+                }
+            }
+        }
+        let (tree, paths) = trees.finish(strings, &mut store)?;
+        store.finish()?;
+        summary.data_blobs_added = store.data_blobs_added;
+        summary.bytes_added = store.bytes_added;
+        // The sender must be dropped inside the scope, before it joins uploads.
+        drop(store);
+        Ok(Output {
+            tree,
+            paths,
+            summary,
+            skipped,
+            files_read,
+        })
+    })
+}

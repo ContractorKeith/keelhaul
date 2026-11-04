@@ -1,16 +1,21 @@
+mod excludes;
+mod files;
+mod parent;
+mod pipeline;
+#[cfg(test)]
+mod tests;
+mod trees;
 mod walk;
 use crate::{
     backend::Backend,
     crypto::envelope::Label,
-    format::{
-        snapshot::{Snapshot, Summary, root_name},
-        tree::Tree,
-    },
+    format::snapshot::{Snapshot, Summary},
     repo::{Error, Repository, blobs::BlobStore},
 };
+pub use excludes::Patterns;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use walk::Walker;
+
 #[derive(Debug, Serialize)]
 pub struct Skipped {
     pub path: String,
@@ -19,8 +24,40 @@ pub struct Skipped {
 #[derive(Debug, Serialize)]
 pub struct Report {
     pub snapshot: String,
-    pub summary: Summary,
+    pub summary: ReportSummary,
     pub skipped: Vec<Skipped>,
+}
+#[derive(Debug, Serialize)]
+pub struct ReportSummary {
+    #[serde(flatten)]
+    pub totals: Summary,
+    pub files_read: u64,
+}
+impl std::ops::Deref for ReportSummary {
+    type Target = Summary;
+    fn deref(&self) -> &Summary {
+        &self.totals
+    }
+}
+pub struct Options {
+    pub parent: Option<String>,
+    pub force_rehash: bool,
+    pub excludes: Vec<String>,
+    pub one_file_system: bool,
+    pub host: Option<String>,
+    pub jobs: usize,
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            parent: None,
+            force_rehash: false,
+            excludes: Vec::new(),
+            one_file_system: false,
+            host: None,
+            jobs: 4,
+        }
+    }
 }
 fn skipped(path: &Path, reason: impl ToString) -> Skipped {
     let reason = reason.to_string();
@@ -36,6 +73,26 @@ pub fn backup<B: Backend>(
     paths: &[PathBuf],
     tags: Vec<String>,
 ) -> Result<Report, Error> {
+    backup_with_options(
+        repo,
+        paths,
+        tags,
+        &Options {
+            jobs: 4,
+            ..Options::default()
+        },
+    )
+}
+pub fn backup_with_options<B: Backend>(
+    repo: &Repository<B>,
+    paths: &[PathBuf],
+    tags: Vec<String>,
+    options: &Options,
+) -> Result<Report, Error> {
+    // M5: shared lock
+    if options.jobs == 0 {
+        return Err(Error::Refused("jobs must be positive".into()));
+    }
     if paths.is_empty() {
         return Err(Error::Refused("backup needs at least one path".into()));
     }
@@ -73,53 +130,26 @@ pub fn backup<B: Backend>(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut walker = Walker {
-        store: BlobStore::load(repo)?,
-        summary: Summary {
-            files_skipped: failures.len() as u64,
-            ..Summary::default()
-        },
-        skipped: failures,
-        gear: repo.chunker_key(),
-    };
-    let mut entries = Vec::new();
-    let mut saved_paths = Vec::new();
-    for ((_, input), text) in roots.iter().zip(&strings) {
-        // A historical lexical fallback is a name, not permission to read a
-        // different live file when the supplied source path cannot be resolved.
-        if let Some(entry) = walker.walk(input, root_name(text).as_bytes())? {
-            entries.push(entry);
-            saved_paths.push(text.clone());
-        }
-    }
-    if entries.is_empty() {
-        return Err(Error::Refused(
-            "no backup roots could be read; no snapshot written".into(),
-        ));
-    }
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    let tree = walker.store.add(
-        crate::format::pack::BlobKind::Tree,
-        &serde_json::to_vec(&Tree {
-            version: 1,
-            entries,
-        })?,
-    )?;
-    walker.store.finish()?;
-    walker.summary.data_blobs_added = walker.store.data_blobs_added;
-    walker.summary.bytes_added = walker.store.bytes_added;
+    let host = options.host.clone().unwrap_or_else(crate::host::hostname);
+    let mut store = BlobStore::load(repo)?;
+    let (parent, previous) = parent::load(repo, &mut store, &host, &strings, options)?;
+    let patterns = Patterns::new(&options.excludes)?;
+    let result = pipeline::run(repo, store, &roots, &strings, previous, &patterns, options)?;
+    let mut summary = result.summary;
+    summary.files_skipped += failures.len() as u64;
+    failures.extend(result.skipped);
     let snapshot = Snapshot {
         version: 1,
         time: crate::format::timestamp(),
-        host: crate::host::hostname(),
+        host,
         username: crate::host::username(),
-        paths: saved_paths,
+        paths: result.paths,
         tags,
-        excludes: Vec::new(),
-        tree,
-        parent: None,
+        excludes: options.excludes.clone(),
+        tree: result.tree,
+        parent,
         program: format!("keelhaul {}", env!("CARGO_PKG_VERSION")),
-        summary: walker.summary.clone(),
+        summary: summary.clone(),
     };
     let id = repo.write_object(
         "snapshots",
@@ -128,7 +158,10 @@ pub fn backup<B: Backend>(
     )?;
     Ok(Report {
         snapshot: id,
-        summary: walker.summary,
-        skipped: walker.skipped,
+        summary: ReportSummary {
+            totals: summary,
+            files_read: result.files_read,
+        },
+        skipped: failures,
     })
 }

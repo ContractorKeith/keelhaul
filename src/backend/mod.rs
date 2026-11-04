@@ -1,5 +1,7 @@
 //! Blocking storage of validated repository object names and opaque bytes.
 mod boxed;
+#[cfg(any(test, feature = "fault-injection"))]
+pub mod fault;
 mod foreign;
 pub mod local;
 mod local_fs;
