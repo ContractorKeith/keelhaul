@@ -1,23 +1,19 @@
-use super::metadata;
+mod walk;
 use crate::{
     backend::Backend,
-    chunker::Chunker,
     crypto::envelope::Label,
     format::{
         snapshot::{Snapshot, Summary, root_name},
-        tree::{Entry, Node, Tree, encode_bytes},
+        tree::Tree,
     },
     repo::{Error, Repository, blobs::BlobStore},
 };
 use serde::Serialize;
 use std::{
     fs,
-    os::unix::{
-        ffi::OsStrExt,
-        fs::{MetadataExt, OpenOptionsExt},
-    },
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
+use walk::Walker;
 #[derive(Debug, Serialize)]
 pub struct Skipped {
     pub path: String,
@@ -29,163 +25,17 @@ pub struct Report {
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
 }
-struct Walker<'a, B> {
-    store: BlobStore<'a, B>,
-    summary: Summary,
-    skipped: Vec<Skipped>,
-    gear: [u8; 32],
-}
-impl<B: Backend> Walker<'_, B> {
-    fn skip(&mut self, path: &Path, reason: impl ToString) {
-        let reason = reason.to_string();
-        eprintln!("warning: {}: {reason}", path.display());
-        self.summary.files_skipped += 1;
-        self.skipped.push(Skipped {
-            path: path.to_string_lossy().into_owned(),
-            reason,
-        });
-    }
-    fn walk(&mut self, path: &Path, name: &[u8]) -> Result<Option<Entry>, Error> {
-        let meta = match fs::symlink_metadata(path) {
-            Ok(m) => m,
-            Err(e) => {
-                self.skip(path, e);
-                return Ok(None);
-            }
-        };
-        let node = if meta.is_symlink() {
-            match fs::read_link(path) {
-                Ok(target) => {
-                    let (target, target_b64) = encode_bytes(target.as_os_str().as_bytes());
-                    Node::Symlink { target, target_b64 }
-                }
-                Err(e) => {
-                    self.skip(path, e);
-                    return Ok(None);
-                }
-            }
-        } else if meta.is_dir() {
-            let children = match fs::read_dir(path) {
-                Ok(d) => d,
-                Err(e) => {
-                    self.skip(path, e);
-                    return Ok(None);
-                }
-            };
-            let mut paths = Vec::new();
-            for child in children {
-                match child {
-                    Ok(c) => paths.push(c.path()),
-                    Err(e) => self.skip(path, e),
-                }
-            }
-            paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-            let mut entries = Vec::new();
-            for child in paths {
-                let name = child
-                    .file_name()
-                    .expect("read_dir child has a name")
-                    .as_bytes();
-                if let Some(e) = self.walk(&child, name)? {
-                    entries.push(e);
-                }
-            }
-            let tree = Tree {
-                version: 1,
-                entries,
-            };
-            let subtree = self.store.add(
-                crate::format::pack::BlobKind::Tree,
-                &serde_json::to_vec(&tree)?,
-            )?;
-            self.summary.dirs += 1;
-            Node::Dir { subtree }
-        } else if meta.is_file() {
-            let file = match fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
-                .open(path)
-            {
-                Ok(f) => f,
-                Err(e) => {
-                    self.skip(path, e);
-                    return Ok(None);
-                }
-            };
-            let opened = match file.metadata() {
-                Ok(m) => m,
-                Err(e) => {
-                    self.skip(path, e);
-                    return Ok(None);
-                }
-            };
-            if opened.ino() != meta.ino() || opened.dev() != meta.dev() || !opened.is_file() {
-                self.skip(path, "changed while opening");
-                return Ok(None);
-            }
-            let mut reader = Chunker::new(&file, &self.gear);
-            let mut content = Vec::new();
-            let mut size = 0;
-            loop {
-                match reader.next_chunk() {
-                    Ok(Some(bytes)) => {
-                        size += bytes.len() as u64;
-                        content.push(
-                            self.store
-                                .add(crate::format::pack::BlobKind::Data, &bytes)?,
-                        );
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        self.skip(path, e);
-                        return Ok(None);
-                    }
-                }
-            }
-            let after = match file.metadata() {
-                Ok(m) => m,
-                Err(e) => {
-                    self.skip(path, e);
-                    return Ok(None);
-                }
-            };
-            if size != meta.len()
-                || meta.mtime() != after.mtime()
-                || meta.mtime_nsec() != after.mtime_nsec()
-                || meta.ctime() != after.ctime()
-                || meta.ctime_nsec() != after.ctime_nsec()
-            {
-                self.skip(path, "changed while reading");
-                return Ok(None);
-            }
-            self.summary.files_new += 1;
-            self.summary.bytes_processed += size;
-            Node::File { size, content }
-        } else {
-            self.skip(path, "unsupported file type");
-            return Ok(None);
-        };
-        Ok(Some(metadata::entry(name, &meta, node)?))
-    }
-}
-/// Lexical cleaning preserves the final symlink so the walk never follows it.
+/// Resolve parent traversal through the filesystem while preserving a symlink root.
 pub fn absolute(path: &Path) -> Result<PathBuf, Error> {
     let joined = if path.is_absolute() {
         path.to_path_buf()
     } else {
         std::env::current_dir()?.join(path)
     };
-    let mut clean = PathBuf::new();
-    for c in joined.components() {
-        match c {
-            Component::ParentDir => {
-                clean.pop();
-            }
-            Component::CurDir => {}
-            other => clean.push(other.as_os_str()),
-        }
+    match (joined.parent(), joined.file_name()) {
+        (Some(parent), Some(name)) => Ok(fs::canonicalize(parent)?.join(name)),
+        _ => Ok(fs::canonicalize(joined)?),
     }
-    Ok(clean)
 }
 pub fn backup<B: Backend>(
     repo: &Repository<B>,

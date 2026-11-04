@@ -54,3 +54,10 @@ The Rust test invokes it when python3 and the package are available; otherwise
 it prints a skip note. This is an independent chunker implementation, not an
 independent implementation of BLAKE3 itself. M2 pack encryption vectors have not
 yet received an independent cryptographic recomputation.
+
+`root-name.json` transcribes SPEC §10's percent-first encoding, including literal
+`%`, `%2F`, and `%25` inside a path component. The vector test checks both
+encoding and decoding; the backup/restore regression uses those names on disk.
+M2 review round 1 corrected the tree file size to 15 bytes and regenerated its
+pack, index and snapshot references. Vector tests now check file sizes against
+pack chunk raw lengths and compare the decrypted tree to `tree.json`.

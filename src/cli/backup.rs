@@ -27,7 +27,8 @@ pub(super) fn run<B: Backend>(
             }
         }
         Command::Snapshots { host, tag, path } => {
-            let snapshots = repo.snapshots()?;
+            let scanned = repo.scan_snapshots()?;
+            let snapshots = scanned.entries;
             let ids = snapshots
                 .iter()
                 .map(|(id, _)| id.clone())
@@ -62,9 +63,12 @@ pub(super) fn run<B: Backend>(
                     );
                 }
             }
+            if scanned.damaged {
+                completed_damage()?;
+            }
         }
-        Command::Ls { snap, path } => {
-            let entries = ops::listing::ls(repo, &snap, path.as_deref())?;
+        Command::Ls { snap, path, host } => {
+            let entries = ops::listing::ls_for_host(repo, &snap, path.as_deref(), host.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string(&entries)?);
             } else {
@@ -77,19 +81,17 @@ pub(super) fn run<B: Backend>(
             snap,
             target,
             include,
+            host,
         } => {
-            let report = ops::restore::restore(repo, &snap, &target, &include)?;
+            let report =
+                ops::restore::restore_for_host(repo, &snap, &target, &include, host.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string(&report)?);
             } else {
                 println!("restored {} entries", report.restored);
             }
             if !report.damaged.is_empty() {
-                // The command already rendered its one JSON document and diagnostics.
-                // Use the shared exit mapping without main printing a second document.
-                use std::io::Write;
-                std::io::stdout().flush()?;
-                std::process::exit(crate::exit::code(Err(crate::exit::Failure::Damage)) as i32);
+                completed_damage()?;
             }
         }
         _ => unreachable!("M2 dispatch only"),
@@ -106,4 +108,11 @@ fn short_id<'a>(id: &'a str, ids: &[String]) -> &'a str {
         len += 1;
     }
     &id[..len]
+}
+
+fn completed_damage() -> std::io::Result<()> {
+    // Rendering is complete; avoid main emitting a second JSON document.
+    use std::io::Write;
+    std::io::stdout().flush()?;
+    std::process::exit(crate::exit::code(Err(crate::exit::Failure::Damage)) as i32)
 }

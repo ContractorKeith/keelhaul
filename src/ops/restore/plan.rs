@@ -13,7 +13,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     os::unix::ffi::OsStringExt,
-    path::{Component, Path, PathBuf},
+    path::{Component, PathBuf},
 };
 pub(super) struct Item {
     pub path: PathBuf,
@@ -23,87 +23,143 @@ pub(super) struct Item {
 struct Planner<'a> {
     snapshot: &'a Snapshot,
     includes: Vec<PathBuf>,
+    matched: HashSet<PathBuf>,
     active: HashSet<String>,
     items: Vec<Item>,
     report: &'a mut Report,
 }
-impl Planner<'_> {
-    fn walk<B: Backend>(
-        &mut self,
-        store: &mut BlobStore<'_, B>,
-        id: &str,
-        base: &Path,
+enum Work {
+    Tree {
+        id: String,
+        base: PathBuf,
         root: bool,
-    ) -> Result<bool, Error> {
-        if self.active.len() >= 256 || !self.active.insert(id.into()) {
-            self.report
-                .damage(damage(id, "cyclic or excessively deep tree"))?;
-            return Ok(false);
-        }
-        let result = (|| {
-            let bytes = store.read(BlobKind::Tree, id)?;
-            let (tree, problems) = Tree::salvage(&bytes).map_err(|e| damage(id, &e.to_string()))?;
-            for problem in problems {
-                self.report.damage(damage(id, &problem))?;
-            }
-            for entry in tree.entries {
-                let path = if root {
-                    let result = entry
-                        .name
-                        .as_deref()
-                        .ok_or_else(|| damage(id, "root name is not UTF-8"))
-                        .and_then(|name| decode_root(name).map_err(|e| damage(id, &e.to_string())));
-                    let decoded = match result {
-                        Ok(p) => p,
+        owner: Option<Item>,
+    },
+    Entry {
+        entry: Entry,
+        base: PathBuf,
+        root: bool,
+        object: String,
+    },
+    Leave(String),
+}
+impl Planner<'_> {
+    fn walk<B: Backend>(&mut self, store: &mut BlobStore<'_, B>, id: &str) -> Result<(), Error> {
+        let mut work = vec![Work::Tree {
+            id: id.into(),
+            base: PathBuf::new(),
+            root: true,
+            owner: None,
+        }];
+        while let Some(task) = work.pop() {
+            match task {
+                Work::Leave(id) => {
+                    self.active.remove(&id);
+                }
+                Work::Tree {
+                    id,
+                    base,
+                    root,
+                    owner,
+                } => {
+                    if self.active.contains(&id) {
+                        self.report.damage(damage(&id, "tree names an ancestor"))?;
+                        continue;
+                    }
+                    let parsed = store.read(BlobKind::Tree, &id).and_then(|bytes| {
+                        Tree::salvage(&bytes).map_err(|e| damage(&id, &e.to_string()))
+                    });
+                    let (tree, problems) = match parsed {
+                        Ok(t) => t,
                         Err(e) => {
                             self.report.damage(e)?;
                             continue;
                         }
                     };
-                    if !self.snapshot.paths.contains(&decoded) {
-                        self.report
-                            .damage(damage(id, "root entry absent from snapshot paths"))?;
+                    for problem in problems {
+                        self.report.damage(damage(&id, &problem))?;
+                    }
+                    if let Some(item) = owner {
+                        self.items.push(item);
+                    }
+                    self.active.insert(id.clone());
+                    work.push(Work::Leave(id.clone()));
+                    for entry in tree.entries.into_iter().rev() {
+                        work.push(Work::Entry {
+                            entry,
+                            base: base.clone(),
+                            root,
+                            object: id.clone(),
+                        });
+                    }
+                }
+                Work::Entry {
+                    entry,
+                    base,
+                    root,
+                    object,
+                } => {
+                    let path = if root {
+                        let decoded = entry
+                            .name
+                            .as_deref()
+                            .ok_or_else(|| damage(&object, "root name is not UTF-8"))
+                            .and_then(|name| {
+                                decode_root(name).map_err(|e| damage(&object, &e.to_string()))
+                            });
+                        let decoded = match decoded {
+                            Ok(p) => p,
+                            Err(e) => {
+                                self.report.damage(e)?;
+                                continue;
+                            }
+                        };
+                        if !self.snapshot.paths.contains(&decoded) {
+                            self.report
+                                .damage(damage(&object, "root entry absent from snapshot paths"))?;
+                            continue;
+                        }
+                        PathBuf::from(decoded.trim_start_matches('/'))
+                    } else {
+                        base.join(OsString::from_vec(
+                            entry
+                                .name_bytes()
+                                .map_err(|e| damage(&object, &e.to_string()))?,
+                        ))
+                    };
+                    if self.includes.contains(&path) {
+                        self.matched.insert(path.clone());
+                    }
+                    let selected = self.includes.is_empty()
+                        || self.includes.iter().any(|i| path.starts_with(i));
+                    let ancestor = self.includes.iter().any(|i| i.starts_with(&path));
+                    if !selected && !ancestor {
                         continue;
                     }
-                    PathBuf::from(decoded.trim_start_matches('/'))
-                } else {
-                    base.join(OsString::from_vec(
-                        entry.name_bytes().map_err(|e| damage(id, &e.to_string()))?,
-                    ))
-                };
-                let selected =
-                    self.includes.is_empty() || self.includes.iter().any(|i| path.starts_with(i));
-                let ancestor = self.includes.iter().any(|i| i.starts_with(&path));
-                if !selected && !ancestor {
-                    continue;
-                }
-                let subtree = if let Node::Dir { subtree } = &entry.node {
-                    Some(subtree.clone())
-                } else {
-                    None
-                };
-                let readable = match subtree {
-                    Some(subtree) => self.walk(store, &subtree, &path, false)?,
-                    None => true,
-                };
-                if readable && (selected || matches!(entry.node, Node::Dir { .. })) {
-                    self.items.push(Item {
-                        path,
+                    let subtree = if let Node::Dir { subtree } = &entry.node {
+                        Some(subtree.clone())
+                    } else {
+                        None
+                    };
+                    let item = Item {
+                        path: path.clone(),
                         entry,
-                        object: id.into(),
-                    });
+                        object,
+                    };
+                    if let Some(id) = subtree {
+                        work.push(Work::Tree {
+                            id,
+                            base: path,
+                            root: false,
+                            owner: Some(item),
+                        });
+                    } else if selected {
+                        self.items.push(item);
+                    }
                 }
-            }
-            Ok(())
-        })();
-        self.active.remove(id);
-        match result {
-            Ok(()) => Ok(true),
-            Err(e) => {
-                self.report.damage(e)?;
-                Ok(false)
             }
         }
+        Ok(())
     }
 }
 pub(super) fn build<B: Backend>(
@@ -129,11 +185,20 @@ pub(super) fn build<B: Backend>(
     let mut planner = Planner {
         snapshot,
         includes: normalized,
+        matched: HashSet::new(),
         active: HashSet::new(),
         items: Vec::new(),
         report,
     };
-    planner.walk(store, &snapshot.tree, Path::new(""), true)?;
+    planner.walk(store, &snapshot.tree)?;
+    for (requested, normalized) in includes.iter().zip(&planner.includes) {
+        if !planner.matched.contains(normalized) {
+            return Err(Error::Refused(format!(
+                "include path not found: {}",
+                requested.display()
+            )));
+        }
+    }
     // Overlapping backup roots can describe the same destination; require agreement.
     let mut unique: HashMap<PathBuf, usize> = HashMap::new();
     let mut items: Vec<Item> = Vec::new();
@@ -171,33 +236,4 @@ pub(super) fn build<B: Backend>(
         }
     }
     Ok(items)
-}
-pub(super) fn preflight(target: &Path, items: &[Item]) -> Result<(), Error> {
-    match std::fs::symlink_metadata(target) {
-        Ok(m) if !m.is_dir() || m.is_symlink() => {
-            return Err(Error::Refused(format!(
-                "restore target is not a directory: {}",
-                target.display()
-            )));
-        }
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-        _ => {}
-    }
-    for item in items {
-        let mut path = target.to_path_buf();
-        for part in item.path.components() {
-            path.push(part.as_os_str());
-            match std::fs::symlink_metadata(&path) {
-                Ok(_) => {
-                    return Err(Error::Refused(format!(
-                        "restore conflict: {}",
-                        path.display()
-                    )));
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
-            }
-        }
-    }
-    Ok(())
 }

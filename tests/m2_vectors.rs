@@ -93,7 +93,7 @@ fn m2_vectors() {
             "chunk-id.json",
             json!({"payload_hex":hex::encode(b"hello keelhaul\n"),"id":blake3::keyed_hash(&keys.chunk_id,b"hello keelhaul\n").to_hex().to_string()}),
         );
-        let tree = json!({"version":1,"entries":[{"name":"%2Ffixture","type":"file","mode":420,"mtime":"2026-11-04T14:03:22.123456789Z","ctime":"2026-11-04T14:03:22.123456789Z","uid":1000,"gid":1000,"user":"vector-user","group":"vector-group","inode":7,"device":1,"links":1,"size":14,"content":[blake3::keyed_hash(&keys.chunk_id,b"hello keelhaul\n").to_hex().to_string()]}]});
+        let tree = json!({"version":1,"entries":[{"name":"%2Ffixture","type":"file","mode":420,"mtime":"2026-11-04T14:03:22.123456789Z","ctime":"2026-11-04T14:03:22.123456789Z","uid":1000,"gid":1000,"user":"vector-user","group":"vector-group","inode":7,"device":1,"links":1,"size":15,"content":[blake3::keyed_hash(&keys.chunk_id,b"hello keelhaul\n").to_hex().to_string()]}]});
         let data = b"hello keelhaul\n".to_vec();
         let tree_bytes = serde_json::to_vec(&tree).unwrap();
         let mut stored = Vec::new();
@@ -143,7 +143,7 @@ fn m2_vectors() {
         write("tree.json", tree);
         write(
             "snapshot.json",
-            json!({"version":1,"time":"2026-11-04T14:03:22.123456789Z","host":"vector-host","username":"vector-user","paths":["/fixture"],"tags":["test"],"excludes":[],"tree":header.blobs[1].id,"parent":null,"program":"keelhaul 0.1.0","summary":{"files_new":1,"files_changed":0,"files_unchanged":0,"dirs":0,"files_skipped":0,"data_blobs_added":1,"bytes_added":55,"bytes_processed":14}}),
+            json!({"version":1,"time":"2026-11-04T14:03:22.123456789Z","host":"vector-host","username":"vector-user","paths":["/fixture"],"tags":["test"],"excludes":[],"tree":header.blobs[1].id,"parent":null,"program":"keelhaul 0.1.0","summary":{"files_new":1,"files_changed":0,"files_unchanged":0,"dirs":0,"files_skipped":0,"data_blobs_added":1,"bytes_added":header.blobs.iter().map(|b|b.length).sum::<u64>(),"bytes_processed":15}}),
         );
     }
     let v = load("gear.json");
@@ -191,10 +191,39 @@ fn m2_vectors() {
                 .as_str()
         );
         assert_eq!(b.raw_length, payload.len() as u64);
+        if b.kind == BlobKind::Tree {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&payload).unwrap(),
+                load("tree.json")
+            );
+        }
     }
     let index = Index::parse(&serde_json::to_vec(&load("index.json")).unwrap()).unwrap();
     assert_eq!(index.packs[0].blobs, header.blobs);
-    Tree::parse(&serde_json::to_vec(&load("tree.json")).unwrap()).unwrap();
+    let tree = Tree::parse(&serde_json::to_vec(&load("tree.json")).unwrap()).unwrap();
+    tree.validate_content_lengths(|id| {
+        Ok(header
+            .blobs
+            .iter()
+            .find(|b| b.kind == BlobKind::Data && b.id == id)
+            .unwrap()
+            .raw_length)
+    })
+    .unwrap();
+    let mut wrong = tree;
+    if let keelhaul::format::tree::Node::File { size, .. } = &mut wrong.entries[0].node {
+        *size += 1;
+    }
+    assert!(
+        wrong
+            .validate_content_lengths(|id| Ok(header
+                .blobs
+                .iter()
+                .find(|b| b.id == id)
+                .unwrap()
+                .raw_length))
+            .is_err()
+    );
     Snapshot::parse(&serde_json::to_vec(&load("snapshot.json")).unwrap()).unwrap();
 }
 
@@ -220,5 +249,15 @@ fn independent_python_chunker_if_available() {
             eprintln!("reference chunker: skipped (python3 unavailable)")
         }
         Err(e) => panic!("cannot run independent reference: {e}"),
+    }
+}
+
+#[test]
+fn root_name_vector_preserves_literal_percent_and_encoded_slash() {
+    for case in load("root-name.json")["cases"].as_array().unwrap() {
+        let path = case["path"].as_str().unwrap();
+        let name = case["name"].as_str().unwrap();
+        assert_eq!(keelhaul::format::snapshot::root_name(path), name);
+        assert_eq!(keelhaul::format::snapshot::decode_root(name).unwrap(), path);
     }
 }

@@ -43,44 +43,80 @@ pub struct Chunker<R> {
     reader: R,
     gear: [u64; 256],
     buffer: Vec<u8>,
+    start: usize,
+    end: usize,
     eof: bool,
+    #[cfg(test)]
+    compactions: usize,
 }
 impl<R: Read> Chunker<R> {
     pub fn new(reader: R, key: &[u8; 32]) -> Self {
         Self {
             reader,
             gear: gear(key),
-            buffer: Vec::with_capacity(MAX),
+            buffer: vec![0; MAX],
+            start: 0,
+            end: 0,
             eof: false,
+            #[cfg(test)]
+            compactions: 0,
         }
     }
-    pub fn next_chunk(&mut self) -> io::Result<Option<Vec<u8>>> {
-        if !self.eof {
-            let mut filled = self.buffer.len();
-            self.buffer.resize(MAX, 0);
-            while filled < MAX {
-                match self.reader.read(&mut self.buffer[filled..]) {
+    /// The next chunk borrows the fixed buffer until the next call.
+    pub fn next_chunk(&mut self) -> io::Result<Option<&[u8]>> {
+        loop {
+            let available = self.end - self.start;
+            if available == 0 && self.eof {
+                return Ok(None);
+            }
+            let length = cut(&self.buffer[self.start..self.end], &self.gear);
+            // A discovered cut is independent of unread input. Exhaust the
+            // current tail before compacting, unless we need more bytes to cut.
+            if self.eof || available == MAX || length < available {
+                let start = self.start;
+                self.start += length;
+                return Ok(Some(&self.buffer[start..self.start]));
+            }
+            if self.start > 0 {
+                self.buffer.copy_within(self.start..self.end, 0);
+                self.end = available;
+                self.start = 0;
+                #[cfg(test)]
+                {
+                    self.compactions += 1;
+                }
+            }
+            while self.end < MAX {
+                match self.reader.read(&mut self.buffer[self.end..]) {
                     Ok(0) => {
                         self.eof = true;
                         break;
                     }
-                    Ok(n) => filled += n,
+                    Ok(n) => self.end += n,
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(e) => {
-                        self.buffer.truncate(filled);
-                        return Err(e);
-                    }
+                    Err(e) => return Err(e),
                 }
             }
-            self.buffer.truncate(filled);
         }
-        if self.buffer.is_empty() {
-            return Ok(None);
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cuts_borrow_one_fixed_buffer_and_compact_only_when_more_input_is_needed() {
+        let mut data = vec![0; 32 * 1024 * 1024];
+        blake3::Hasher::new().finalize_xof().fill(&mut data);
+        let mut reader = Chunker::new(data.as_slice(), &[1; 32]);
+        let allocation = reader.buffer.as_ptr();
+        let mut chunks = 0;
+        let mut total = 0;
+        while let Some(chunk) = reader.next_chunk().unwrap() {
+            chunks += 1;
+            total += chunk.len();
         }
-        let end = cut(&self.buffer, &self.gear);
-        let chunk = self.buffer[..end].to_vec();
-        self.buffer.copy_within(end.., 0);
-        self.buffer.truncate(self.buffer.len() - end);
-        Ok(Some(chunk))
+        assert_eq!(total, data.len());
+        assert_eq!(reader.buffer.as_ptr(), allocation);
+        assert!(reader.compactions < chunks / 2);
     }
 }

@@ -181,6 +181,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
     }
     fn flush_index(&mut self) -> Result<(), Error> {
         if self.packs.is_empty() {
+            self.flushed = Instant::now();
             return Ok(());
         }
         let index = Index {
@@ -202,4 +203,20 @@ impl<'a, B: Backend> BlobStore<'a, B> {
 
 pub fn pack_name(id: &str) -> Result<ObjectName, crate::backend::BackendError> {
     ObjectName::new(&format!("data/{}/{id}", id.get(..2).unwrap_or("")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{backend::memory::MemoryBackend, secret::Secret};
+    #[test]
+    fn empty_index_flush_restarts_the_interval_without_forcing_the_next_blob_out() {
+        let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
+        let mut store = BlobStore::load(&repo).unwrap();
+        store.flushed = Instant::now() - Duration::from_secs(301);
+        store.flush_index().unwrap();
+        store.add(BlobKind::Data, b"new data").unwrap();
+        assert!(repo.backend.list(Kind::Data).unwrap().is_empty());
+        assert!(store.flushed.elapsed() < Duration::from_secs(1));
+    }
 }

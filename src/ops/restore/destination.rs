@@ -1,4 +1,6 @@
 //! Descriptor-relative writes: every ancestor is opened with O_NOFOLLOW.
+mod preflight;
+mod publication;
 use crate::{format::tree::Entry, repo::Error};
 use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, RenameFlags, Timespec, Timestamps, Uid};
 use std::{
@@ -19,11 +21,15 @@ fn os(error: rustix::io::Errno) -> Error {
 }
 impl Destination {
     pub fn new(target: &Path) -> Result<Self, Error> {
-        std::fs::create_dir_all(target)?;
-        let canonical = std::fs::canonicalize(target)?;
-        let root = fs::open(&canonical, DIRECTORY, Mode::empty())
-            .map_err(os)?
-            .into();
+        let root = match fs::open(target, DIRECTORY, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::NOENT) => {
+                std::fs::create_dir_all(target)?;
+                fs::open(target, DIRECTORY, Mode::empty()).map_err(os)?
+            }
+            Err(error) => return Err(os(error)),
+        }
+        .into();
         Ok(Self { root })
     }
     fn directory(&self, path: &Path) -> Result<File, Error> {
@@ -129,14 +135,27 @@ pub(super) struct Temporary {
 impl Temporary {
     pub fn publish(&self, entry: &Entry) -> Result<(), Error> {
         self.file.sync_all()?;
-        fs::renameat_with(
+        let renamed = fs::renameat_with(
             &self.parent,
             &self.name,
             &self.parent,
             &self.final_name,
             RenameFlags::NOREPLACE,
-        )
-        .map_err(os)?;
+        );
+        publication::finish(
+            renamed,
+            &self.final_name,
+            || {
+                fs::linkat(
+                    &self.parent,
+                    &self.name,
+                    &self.parent,
+                    &self.final_name,
+                    AtFlags::empty(),
+                )
+            },
+            || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
+        )?;
         apply(&self.file, entry)?;
         self.file.sync_all()?;
         self.parent.sync_all()?;
@@ -177,39 +196,4 @@ fn apply(file: &File, entry: &Entry) -> Result<(), Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn replaced_directory_symlink_is_never_traversed() {
-        let scratch = tempfile::tempdir().unwrap();
-        let target = scratch.path().join("target");
-        let outside = scratch.path().join("outside");
-        std::fs::create_dir(&outside).unwrap();
-        let destination = Destination::new(&target).unwrap();
-        destination.mkdir(Path::new("child")).unwrap();
-        std::fs::remove_dir(target.join("child")).unwrap();
-        std::os::unix::fs::symlink(&outside, target.join("child")).unwrap();
-        assert!(destination.temporary(Path::new("child/escape")).is_err());
-        assert!(std::fs::read_dir(outside).unwrap().next().is_none());
-    }
-    #[test]
-    fn publication_refuses_a_conflict_created_after_preflight() {
-        let scratch = tempfile::tempdir().unwrap();
-        let destination = Destination::new(scratch.path()).unwrap();
-        let temporary = destination.temporary(Path::new("file")).unwrap();
-        std::fs::write(scratch.path().join("file"), b"user bytes").unwrap();
-        let entry: Entry = serde_json::from_value(serde_json::json!({
-            "name":"file","type":"file","mode":420,
-            "mtime":"2026-11-04T14:03:22.123456789Z", "ctime":"2026-11-04T14:03:22.123456789Z",
-            "uid":0,"gid":0,"inode":1,"device":1,"links":1,"size":0,"content":[]
-        }))
-        .unwrap();
-        assert!(temporary.publish(&entry).is_err());
-        drop(temporary);
-        assert_eq!(
-            std::fs::read(scratch.path().join("file")).unwrap(),
-            b"user bytes"
-        );
-        assert_eq!(std::fs::read_dir(scratch.path()).unwrap().count(), 1);
-    }
-}
+mod tests;

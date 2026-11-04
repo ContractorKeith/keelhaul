@@ -67,14 +67,16 @@ pub(super) enum Command {
         path: Option<String>,
     },
     #[command(
-        about = "List a snapshot; SNAP is a unique hex prefix (at least 8 characters) or latest (newest time across all snapshots)"
+        about = "List a snapshot; SNAP is a unique hex prefix (at least 8 characters) or latest (newest for this host; --host H selects another host)"
     )]
     Ls {
         snap: String,
-        path: Option<String>,
+        path: Option<PathBuf>,
+        #[arg(long)]
+        host: Option<String>,
     },
     #[command(
-        about = "Restore beneath TARGET with original absolute paths relative to it; SNAP is a unique hex prefix (at least 8 characters) or latest (newest time across all snapshots)"
+        about = "Restore beneath TARGET with original absolute paths relative to it; SNAP is a unique hex prefix (at least 8 characters) or latest (newest for this host; --host H selects another host)"
     )]
     Restore {
         snap: String,
@@ -82,6 +84,8 @@ pub(super) enum Command {
         target: PathBuf,
         #[arg(long)]
         include: Vec<PathBuf>,
+        #[arg(long)]
+        host: Option<String>,
     },
     Init,
     Key {

@@ -47,19 +47,30 @@ pub fn restore<B: Backend>(
     target: &Path,
     includes: &[PathBuf],
 ) -> Result<Report, Error> {
-    let (_, snapshot) = repo.select_snapshot(selector)?;
+    restore_for_host(repo, selector, target, includes, None)
+}
+pub fn restore_for_host<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    target: &Path,
+    includes: &[PathBuf],
+    host: Option<&str>,
+) -> Result<Report, Error> {
+    let (_, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
     let mut report = Report::default();
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
-    plan::preflight(target, &items)?;
     let destination = destination::Destination::new(target)?;
+    let preflight = destination.preflight(&items)?;
     let mut hardlinks: HashMap<(u64, u64), (PathBuf, u64, Vec<String>)> = HashMap::new();
     for item in &items {
         let path = &item.path;
         let outcome = (|| {
             match &item.entry.node {
                 Node::Dir { .. } => {
-                    destination.mkdir(path)?;
+                    if !preflight.reused.contains(path) {
+                        destination.mkdir(path)?;
+                    }
                 }
                 Node::Symlink { .. } => {
                     let raw = item
@@ -70,20 +81,13 @@ pub fn restore<B: Backend>(
                     destination.symlink(path, &std::ffi::OsString::from_vec(raw), &item.entry)?;
                 }
                 Node::File { size, content } => {
-                    // Validate reference sizes before a single byte is published.
-                    let total = content.iter().try_fold(0u64, |sum, id| {
-                        store.raw_length(BlobKind::Data, id).and_then(|n| {
-                            sum.checked_add(n).ok_or_else(|| {
-                                super::listing::damage(&item.object, "file size overflow")
-                            })
+                    item.entry
+                        .validate_content_lengths(|id| {
+                            store
+                                .raw_length(BlobKind::Data, id)
+                                .map_err(|e| crate::format::ParseError(e.to_string()))
                         })
-                    })?;
-                    if total != *size {
-                        return Err(super::listing::damage(
-                            &item.object,
-                            "file size differs from chunk lengths",
-                        ));
-                    }
+                        .map_err(|e| super::listing::damage(&item.object, &e.to_string()))?;
                     let key = (item.entry.device, item.entry.inode);
                     if item.entry.links > 1
                         && let Some((first, first_size, first_content)) = hardlinks.get(&key)
@@ -116,9 +120,10 @@ pub fn restore<B: Backend>(
         }
     }
     for item in items.iter().rev() {
-        if matches!(item.entry.node, Node::Dir { .. }) {
+        if matches!(item.entry.node, Node::Dir { .. }) && !preflight.reused.contains(&item.path) {
             destination.directory_metadata(&item.path, &item.entry)?;
         }
     }
+    preflight.restore_mtimes()?;
     Ok(report)
 }

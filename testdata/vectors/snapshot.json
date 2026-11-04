@@ -7,8 +7,8 @@
   ],
   "program": "keelhaul 0.1.0",
   "summary": {
-    "bytes_added": 55,
-    "bytes_processed": 14,
+    "bytes_added": 437,
+    "bytes_processed": 15,
     "data_blobs_added": 1,
     "dirs": 0,
     "files_changed": 0,
@@ -20,7 +20,7 @@
     "test"
   ],
   "time": "2026-11-04T14:03:22.123456789Z",
-  "tree": "d10de0032695dbb7ec8dde0e69513f91ef86de56b02306d92198f616a57ac789",
+  "tree": "da84c9f97144eac1775a1940252c5bd812472ddd24b835edc4eb0b39fa379e6d",
   "username": "vector-user",
   "version": 1
 }

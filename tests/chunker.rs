@@ -17,7 +17,7 @@ proptest! {
     fn streaming_concatenates_bounded_deterministic(seed in any::<[u8;32]>(), key in any::<[u8;32]>(), len in 0usize..20*1024*1024) {
         let mut bytes=vec![0;len]; let mut h=blake3::Hasher::new(); h.update(&seed); h.finalize_xof().fill(&mut bytes);
         let mut reader=Chunker::new(bytes.as_slice(),&key); let mut output=Vec::new(); let mut lengths=Vec::new();
-        while let Some(chunk)=reader.next_chunk().unwrap() { prop_assert!(chunk.len()<=MAX); lengths.push(chunk.len()); output.extend(chunk); }
+        while let Some(chunk)=reader.next_chunk().unwrap() { prop_assert!(chunk.len()<=MAX); lengths.push(chunk.len()); output.extend_from_slice(chunk); }
         prop_assert_eq!(&output,&bytes);
         for length in lengths.iter().take(lengths.len().saturating_sub(1)) { prop_assert!(*length>=MIN); }
         let mut again=Chunker::new(ShortReads(bytes.as_slice()),&key); let mut other=Vec::new();

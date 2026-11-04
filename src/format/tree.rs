@@ -74,6 +74,23 @@ fn decode_bytes(text: &Option<String>, b64: &Option<String>) -> Result<Vec<u8>, 
     }
 }
 impl Entry {
+    /// Validate references when the caller also has authenticated chunk lengths.
+    pub fn validate_content_lengths(
+        &self,
+        mut length: impl FnMut(&str) -> Result<u64, ParseError>,
+    ) -> Result<(), ParseError> {
+        if let Node::File { size, content } = &self.node {
+            let mut total = 0u64;
+            for id in content {
+                total = total
+                    .checked_add(length(id)?)
+                    .ok_or_else(|| ParseError("file size overflow".into()))?;
+            }
+            require(total == *size, "file size differs from chunk lengths")?;
+        }
+        Ok(())
+    }
+
     pub fn name_bytes(&self) -> Result<Vec<u8>, ParseError> {
         decode_bytes(&self.name, &self.name_b64)
     }
@@ -122,6 +139,16 @@ impl Entry {
     }
 }
 impl Tree {
+    pub fn validate_content_lengths(
+        &self,
+        mut length: impl FnMut(&str) -> Result<u64, ParseError>,
+    ) -> Result<(), ParseError> {
+        for entry in &self.entries {
+            entry.validate_content_lengths(&mut length)?;
+        }
+        Ok(())
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self, ParseError> {
         let tree: Self = serde_json::from_slice(bytes)?;
         require(tree.version == 1, "unknown tree version")?;
