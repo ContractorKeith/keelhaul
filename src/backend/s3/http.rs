@@ -1,4 +1,4 @@
-use super::{S3Backend, error, retry};
+use super::{S3Backend, error, error_code, retry};
 use crate::backend::BackendError;
 use rusty_s3::S3Action;
 use std::{thread, time::Duration};
@@ -7,6 +7,7 @@ pub(super) struct Response {
     pub status: u16,
     pub size: Option<u64>,
     retry_after: Option<u64>,
+    missing_bucket: bool,
     pub content_range: Option<String>,
     pub bytes: Vec<u8>,
 }
@@ -55,6 +56,16 @@ impl S3Backend {
                 } else {
                     None
                 };
+                let missing_bucket = if status == 404 {
+                    let body = r
+                        .body_mut()
+                        .with_config()
+                        .limit(retry::BODY_LIMIT)
+                        .read_to_vec()?;
+                    error_code::is_missing_bucket(&body)
+                } else {
+                    false
+                };
                 let bytes = if (200..300).contains(&status) {
                     if A::METHOD != rusty_s3::Method::Head
                         && size.is_some_and(|size| size > retry::BODY_LIMIT)
@@ -73,9 +84,13 @@ impl S3Backend {
                     size,
                     content_range,
                     retry_after,
+                    missing_bucket,
                     bytes,
                 })
             });
+            if result.as_ref().is_ok_and(|r| r.missing_bucket) {
+                return Err(BackendError::BucketNotFound(self.bucket.name().to_owned()));
+            }
             let retry = match &result {
                 Ok(r) => r.status == 429 || (500..600).contains(&r.status),
                 Err(e) => retry::retryable(e),

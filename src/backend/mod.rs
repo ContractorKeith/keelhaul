@@ -15,6 +15,10 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
+    #[error("bucket not found: {0}")]
+    BucketNotFound(String),
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(&'static str),
     #[error("object not found: {0}")]
     NotFound(ObjectName),
     #[error("object already exists with different content: {0}")]

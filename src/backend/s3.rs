@@ -1,5 +1,6 @@
 //! Path-style S3, signed with rusty-s3 and sent synchronously over rustls.
 mod config;
+mod error_code;
 mod http;
 mod list;
 mod range;
@@ -102,6 +103,8 @@ impl S3Backend {
 }
 
 impl Backend for S3Backend {
+    /// Create-once is exact only with conditional PUT; otherwise concurrent init
+    /// of one repository is unsafe because HEAD-then-PUT cannot exclude writers.
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
         let mut state = self
             .conditional

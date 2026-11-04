@@ -105,7 +105,7 @@ pub struct S3Config {
     pub location: S3Location,
     credentials: Credentials,
     pub region: String,
-    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, default 60 seconds).
+    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, 1..=3600, default 60 seconds).
     /// Up to five attempts run, with capped, jittered backoff between attempts.
     pub timeout: Duration,
     pub verbose: bool,
@@ -130,6 +130,7 @@ impl S3Config {
     }
 
     pub(super) fn connect(self) -> Result<S3Backend, BackendError> {
+        checked_timeout(self.timeout)?;
         let bucket = self.location.bucket(&self.region)?;
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
@@ -148,22 +149,20 @@ impl S3Config {
     }
 
     pub fn from_env(location: S3Location, verbose: bool) -> Result<Self, BackendError> {
+        let value = env::var("KEELHAUL_S3_TIMEOUT_SECS")
+            .map(Some)
+            .or_else(|e| match e {
+                env::VarError::NotPresent => Ok(None),
+                _ => Err(timeout_error()),
+            })?;
+        let timeout = parse_timeout(value.as_deref())?;
         let credentials = Credentials::from_env()
             .ok_or_else(|| error("S3 requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"))?;
-        let timeout = match env::var("KEELHAUL_S3_TIMEOUT_SECS") {
-            Ok(value) => value
-                .parse::<u64>()
-                .ok()
-                .filter(|n| *n > 0)
-                .ok_or_else(|| error("KEELHAUL_S3_TIMEOUT_SECS must be a positive integer"))?,
-            Err(env::VarError::NotPresent) => 60,
-            Err(_) => return Err(error("invalid KEELHAUL_S3_TIMEOUT_SECS")),
-        };
         Ok(Self {
             location,
             credentials,
             region: env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".into()),
-            timeout: Duration::from_secs(timeout),
+            timeout,
             verbose,
         })
     }
@@ -185,5 +184,55 @@ impl fmt::Debug for S3Config {
             .field("access_key", &format!("****{suffix}"))
             .field("timeout", &self.timeout)
             .finish_non_exhaustive()
+    }
+}
+
+fn timeout_error() -> BackendError {
+    BackendError::InvalidConfig("KEELHAUL_S3_TIMEOUT_SECS must be an integer in 1..=3600")
+}
+
+fn checked_timeout(timeout: Duration) -> Result<Duration, BackendError> {
+    if (Duration::from_secs(1)..=Duration::from_secs(3600)).contains(&timeout) {
+        Ok(timeout)
+    } else {
+        Err(timeout_error())
+    }
+}
+
+fn parse_timeout(value: Option<&str>) -> Result<Duration, BackendError> {
+    let seconds = value
+        .unwrap_or("60")
+        .parse::<u64>()
+        .map_err(|_| timeout_error())?;
+    checked_timeout(Duration::from_secs(seconds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn s3_timeout_bounds_refuse_zero_large_and_max_values() {
+        for value in ["0", "3601", "18446744073709551615", "bad"] {
+            assert!(matches!(
+                parse_timeout(Some(value)),
+                Err(BackendError::InvalidConfig(_))
+            ));
+        }
+        for value in [1, 3600] {
+            assert_eq!(
+                parse_timeout(Some(&value.to_string())).unwrap(),
+                Duration::from_secs(value)
+            );
+        }
+        assert_eq!(parse_timeout(None).unwrap(), Duration::from_secs(60));
+        let mut config = S3Config::new(
+            S3Location::parse("s3:https://host/bucket").unwrap(),
+            Credentials::new("access", "secret"),
+        );
+        config.timeout = Duration::from_secs(u64::MAX);
+        assert!(matches!(
+            S3Backend::new(config),
+            Err(BackendError::InvalidConfig(_))
+        ));
     }
 }

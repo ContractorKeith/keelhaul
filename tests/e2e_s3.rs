@@ -210,3 +210,23 @@ fn s3_capture_pagination() {
     }
     assert_eq!((total, pages), (1003, 2));
 }
+
+#[test]
+fn s3_nonexistent_bucket_is_an_error_not_a_missing_object() {
+    if !docker::enabled() {
+        return;
+    }
+    docker::require_s3();
+    let mut nonce = [0; 8];
+    getrandom::fill(&mut nonce).unwrap();
+    let bucket = format!("keelhaul-missing-{}", hex::encode(nonce));
+    let location = S3Location::parse(&format!("s3:http://127.0.0.1:7070/{bucket}")).unwrap();
+    let backend = S3Backend::new(S3Config::new(
+        location,
+        Credentials::new("keelhaul-test", "keelhaul-test-password"),
+    ))
+    .unwrap();
+    let error = backend.read(&name("config")).unwrap_err();
+    assert!(matches!(error, BackendError::BucketNotFound(_)));
+    assert_eq!(error.to_string(), format!("bucket not found: {bucket}"));
+}

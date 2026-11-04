@@ -56,7 +56,7 @@ completes.
 | 15 | Locks (shared/exclusive, refresh, stale, self-check), `unlock` | v1 | M5 | SPEC §11 |
 | 16 | `forget` with retention policy, `--dry-run`, `--prune` | v1 | M5 | grouped by host + paths |
 | 17 | `prune` with repack, SIGKILL loop for prune | v1 | M5 | SPEC §14 |
-| 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials |
+| 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials; create-once is exact only on servers with conditional PUT; otherwise concurrent `init` of one repo is unsafe |
 | 19 | SFTP backend over system `ssh -s sftp`, own SFTP v3 client, sshd e2e | v1 | M7 | honours `~/.ssh/config` |
 | 20 | `--json` on every command, exit codes 0/1/2/3/4 | v1 | M0–M5 | each milestone for its commands |
 | 21 | Release binaries (linux x64/arm64, macOS arm64), Homebrew formula, crates.io | v1 | M8 | |

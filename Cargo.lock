@@ -728,6 +728,7 @@ dependencies = [
  "gethostname",
  "getrandom 0.3.4",
  "hex",
+ "instant-xml",
  "rpassword",
  "rusty-s3",
  "serde",
