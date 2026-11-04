@@ -1,19 +1,13 @@
 services:
-  minio:
-    # Last official release digest, retained for M6. Upstream withdrew public
-    # images from Docker Hub and Quay in September 2026; see PR limitations.
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: keelhaul-test
-      MINIO_ROOT_PASSWORD: keelhaul-test-password
+  s3:
+    image: versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
+    command: ['--access', 'keelhaul-test', '--secret', 'keelhaul-test-password', '--health', '/health', 'posix', '/data']
     ports:
-      - '127.0.0.1:9000:9000'
-      - '127.0.0.1:9001:9001'
+      - '127.0.0.1:7070:7070'
     volumes:
-      - minio-data:/data
+      - s3-data:/data
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:7070/health']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -31,5 +25,5 @@ services:
       - ./.tmp/sshd:/scratch:ro
       - sshd-config:/config
 volumes:
-  minio-data:
+  s3-data:
   sshd-config:

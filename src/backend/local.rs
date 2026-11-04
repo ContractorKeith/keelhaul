@@ -12,7 +12,7 @@ pub struct LocalBackend {
 
 impl LocalBackend {
     pub fn new(root: impl AsRef<Path>) -> Result<Self, BackendError> {
-        ensure_directory(root.as_ref())?;
+        ensure_directory(root.as_ref(), root.as_ref())?;
         Ok(Self {
             root: root.as_ref().to_path_buf(),
         })
@@ -66,7 +66,7 @@ impl Backend for LocalBackend {
         let parent = path
             .parent()
             .expect("validated object has a parent directory");
-        ensure_directory(parent)?;
+        ensure_directory(parent, &self.root)?;
         // OS directory locks serialize check + rename across independent instances
         // and processes. Closing the handle releases the lock even after a crash.
         let directory = File::open(parent)?;
@@ -162,32 +162,33 @@ impl Backend for LocalBackend {
     }
 }
 
-// Persist each newly created directory entry, including data's shard directories.
-fn ensure_directory(path: &Path) -> io::Result<()> {
+// Existing directories need no sync. Internal directory creation persists its
+// parent entry; creating the repository root tolerates an unreadable parent.
+fn ensure_directory(path: &Path, root: &Path) -> io::Result<()> {
     if path.is_dir() {
-        // Another writer may have just created this directory. Persist its entry
-        // before relying on it, even if that writer has not finished its fsync.
-        File::open(path)?.sync_all()?;
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        return File::open(parent)?.sync_all();
+        return Ok(());
     }
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        ensure_directory(parent)?;
-    }
-    match fs::create_dir(path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => {}
-        Err(error) => return Err(error),
-    }
-    File::open(path)?.sync_all()?;
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    File::open(parent)?.sync_all()
+    if path == root {
+        fs::create_dir_all(path)?;
+    } else {
+        ensure_directory(parent, root)?;
+        match fs::create_dir(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    File::open(path)?.sync_all()?;
+    match File::open(parent).and_then(|directory| directory.sync_all()) {
+        Err(error) if path == root && error.kind() == io::ErrorKind::PermissionDenied => Ok(()),
+        result => result,
+    }
 }
 
 struct TempFile(PathBuf);

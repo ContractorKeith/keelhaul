@@ -202,6 +202,7 @@ fn independent_local_instances_do_not_replace_each_other() {
     });
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn local_handles_non_utf8_repository_paths() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
