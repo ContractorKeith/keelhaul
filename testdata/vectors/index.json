@@ -1,0 +1,25 @@
+{
+  "packs": [
+    {
+      "blobs": [
+        {
+          "id": "96a64b0e21e097784d0d577ccf75b494b92523b2472c2b671e7ac3aabe32b19d",
+          "length": 56,
+          "offset": 0,
+          "raw_length": 15,
+          "type": "data"
+        },
+        {
+          "id": "d10de0032695dbb7ec8dde0e69513f91ef86de56b02306d92198f616a57ac789",
+          "length": 381,
+          "offset": 56,
+          "raw_length": 340,
+          "type": "tree"
+        }
+      ],
+      "id": "3c260e0df7654cc97263d8eaf9e647dbcfbf4b7f509e0e4642f7ff1e791c85cf"
+    }
+  ],
+  "supersedes": [],
+  "version": 1
+}

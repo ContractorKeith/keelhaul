@@ -16,3 +16,5 @@ pub mod secret;
 
 pub mod cli;
 pub mod host;
+
+pub mod chunker;

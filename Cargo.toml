@@ -28,9 +28,12 @@ rpassword = "7"
 gethostname = "1"
 uzers = "0.12"
 shell-words = "1.1.1"
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
+filetime = "0.2"
 tempfile = "3"
+proptest = "1"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

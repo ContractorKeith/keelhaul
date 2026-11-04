@@ -33,3 +33,29 @@ pub(crate) fn valid_id(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+pub mod index;
+pub mod pack;
+pub mod snapshot;
+pub mod tree;
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct ParseError(pub String);
+impl From<String> for ParseError {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl From<serde_json::Error> for ParseError {
+    fn from(value: serde_json::Error) -> Self {
+        Self(value.to_string())
+    }
+}
+pub(crate) fn require(ok: bool, message: &str) -> Result<(), ParseError> {
+    if ok {
+        Ok(())
+    } else {
+        Err(ParseError(message.into()))
+    }
+}

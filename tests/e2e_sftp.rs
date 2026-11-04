@@ -3,6 +3,8 @@
 mod backend_edges;
 #[path = "common/backend_suite.rs"]
 mod backend_suite;
+#[path = "common/backup_fixture.rs"]
+mod backup_fixture;
 #[path = "common/sftp_cli.rs"]
 mod cli_tests;
 #[path = "common/docker.rs"]
@@ -73,6 +75,11 @@ fn sftp_e2e_conformance_and_failures() {
             "KEELHAUL_SSH_ARGS",
             format!("-F {}", shell_words::quote(&config_path.to_string_lossy())),
         ));
+
+    let backup_root = format!("{root}-m2");
+    let backup_backend =
+        SftpBackend::with_client(backup_root.clone(), connect(&config_path, &backup_root)).unwrap();
+    backup_fixture::run(backup_backend);
 
     cli_tests::run(&config_path, &root, scratch.path());
     links::run(&config_path, &root);
