@@ -60,7 +60,7 @@ pub fn large_ranges(b: &dyn Backend) {
     b.delete(&object).unwrap();
 }
 
-pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
+pub fn foreign_entries(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn(&str, &[u8])) {
     let id = "ab".repeat(32);
     for (kind, base, directory) in [
         (Kind::Config, "config".to_owned(), ""),
@@ -77,7 +77,11 @@ pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
         ];
         if kind == Kind::Data {
             raw_names.push(format!("data/ff/{id}")); // wrong shard
-            raw_names.push(format!("data/ab/{}", id.to_uppercase()));
+            // On case-folding filesystems this aliases the valid lowercase ID.
+            // Only this fixture is omitted; memory and case-sensitive storage keep it.
+            if case_sensitive {
+                raw_names.push(format!("data/ab/{}", id.to_uppercase()));
+            }
         }
         for raw in &raw_names {
             plant_raw(raw, b"partial");

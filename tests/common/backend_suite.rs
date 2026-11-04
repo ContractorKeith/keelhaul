@@ -18,7 +18,7 @@ pub fn assert_entries(b: &dyn Backend, kind: Kind, expected: &[(ObjectName, u64)
     assert_eq!(actual, expected);
 }
 
-pub fn run_suite(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
+pub fn run_suite(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn(&str, &[u8])) {
     for kind in Kind::ALL {
         assert!(b.list(kind).unwrap().is_empty());
     }
@@ -133,6 +133,6 @@ pub fn run_suite(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
     }
     super::backend_edges::large_listing(b);
     super::backend_edges::large_ranges(b);
-    super::backend_edges::foreign_entries(b, &plant_raw);
+    super::backend_edges::foreign_entries(b, case_sensitive, &plant_raw);
     super::backend_edges::foreign_depth(b, plant_raw);
 }

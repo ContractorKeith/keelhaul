@@ -5,7 +5,11 @@ use keelhaul::backend::{Backend, BackendError, local::LocalBackend, memory::Memo
 use std::{path::Path, sync::Barrier};
 
 fn local_suite(root: &Path) {
-    run_suite(&LocalBackend::new(root).unwrap(), |raw, bytes| {
+    let backend = LocalBackend::new(root).unwrap();
+    std::fs::write(root.join("probe"), b"").unwrap();
+    let folds_case = root.join("PROBE").try_exists().unwrap();
+    std::fs::remove_file(root.join("probe")).unwrap();
+    run_suite(&backend, !folds_case, |raw, bytes| {
         let path = root.join(raw);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, bytes).unwrap();
@@ -15,7 +19,7 @@ fn local_suite(root: &Path) {
 #[test]
 fn memory_conformance() {
     let b = MemoryBackend::new();
-    run_suite(&b, |raw, bytes| b.plant_raw(raw, bytes).unwrap());
+    run_suite(&b, true, |raw, bytes| b.plant_raw(raw, bytes).unwrap());
 }
 
 #[test]
