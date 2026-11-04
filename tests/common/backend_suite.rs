@@ -133,5 +133,6 @@ pub fn run_suite(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
     }
     super::backend_edges::large_listing(b);
     super::backend_edges::large_ranges(b);
-    super::backend_edges::foreign_entries(b, plant_raw);
+    super::backend_edges::foreign_entries(b, &plant_raw);
+    super::backend_edges::foreign_depth(b, plant_raw);
 }

@@ -1,4 +1,4 @@
-use super::{BackendError, ForeignEntry, Kind};
+use super::BackendError;
 use std::{
     fs::{self, File},
     io,
@@ -37,61 +37,6 @@ pub(super) fn ensure_directory(path: &Path, root: &Path) -> Result<(), BackendEr
         Err(error) if path == root && error.kind() == io::ErrorKind::PermissionDenied => Ok(()),
         result => result.map_err(|e| at(parent, e)),
     }
-}
-
-pub(super) fn scan(root: &Path, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError> {
-    let mut entries = Vec::new();
-    let mut pending = vec![root.join(kind.directory())];
-    while let Some(directory) = pending.pop() {
-        let children = match fs::read_dir(&directory) {
-            Ok(children) => children,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(at(&directory, error)),
-        };
-        for child in children {
-            let child = child.map_err(|e| at(&directory, e))?;
-            let path = child.path();
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(at(&path, error)),
-            };
-            if metadata.is_dir() && kind != Kind::Config {
-                pending.push(path);
-            } else if metadata.is_file() {
-                let relative = path
-                    .strip_prefix(root)
-                    .expect("scan visits only paths under root");
-                if let Some(raw) = relative.to_str() {
-                    entries.push(ForeignEntry {
-                        raw: raw.to_owned(),
-                        size: metadata.len(),
-                        modified: metadata.modified().ok(),
-                    });
-                }
-            }
-        }
-    }
-    entries.sort_by(|a, b| a.raw.cmp(&b.raw));
-    Ok(entries)
-}
-
-// Reject directory symlinks so raw deletion cannot escape into another directory.
-pub(super) fn check_parents(root: &Path, raw: &str) -> Result<(), BackendError> {
-    let mut path = root.to_path_buf();
-    let parts: Vec<_> = raw.split('/').collect();
-    for part in &parts[..parts.len() - 1] {
-        path.push(part);
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(BackendError::InvalidName(raw.to_owned()));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(at(&path, error)),
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn lock_result(result: io::Result<()>) -> io::Result<()> {

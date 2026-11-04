@@ -86,7 +86,7 @@ fn timestamps_match_storage_and_survive_identical_retries() {
 }
 
 #[test]
-fn foreign_deletion_cannot_follow_a_directory_symlink() {
+fn foreign_deletion_refuses_nested_symlink_paths() {
     let dir = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let b = LocalBackend::new(dir.path()).unwrap();

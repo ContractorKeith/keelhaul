@@ -2,6 +2,7 @@
 mod foreign;
 pub mod local;
 mod local_fs;
+mod local_scan;
 pub mod memory;
 
 use std::{
@@ -146,7 +147,9 @@ pub struct Entry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForeignEntry {
+    /// Display name; lossy or otherwise unsafe names cannot be deleted.
     pub raw: String,
+    pub deletable: bool,
     pub size: u64,
     pub modified: Option<SystemTime>,
 }
@@ -160,7 +163,7 @@ pub trait Backend: Send + Sync {
     -> Result<Vec<u8>, BackendError>;
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError>;
     fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError>;
-    /// Deletes only safe, non-object names beneath a known repository directory.
+    /// Deletes safe, non-object names only at the fixed repository object depths.
     /// Both deletion operations are idempotent when the target is missing.
     fn delete_foreign(&self, raw: &str) -> Result<(), BackendError>;
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError>;

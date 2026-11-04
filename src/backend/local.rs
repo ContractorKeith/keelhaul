@@ -1,4 +1,5 @@
-use super::local_fs::{self, TempFile, at, ensure_directory, lock_result};
+use super::local_fs::{TempFile, at, ensure_directory, lock_result};
+use super::local_scan;
 use super::{Backend, BackendError, Entry, ForeignEntry, Kind, ObjectName, foreign, object_error};
 use std::{
     fs::{self, File, OpenOptions},
@@ -121,29 +122,29 @@ impl Backend for LocalBackend {
     }
 
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError> {
-        Ok(local_fs::scan(&self.root, kind)?
+        Ok(local_scan::scan(&self.root, kind)?
             .into_iter()
             .filter_map(|entry| {
-                let name = ObjectName::new(&entry.raw).ok()?;
+                let name = entry.object?;
                 (name.kind() == kind).then_some(Entry {
                     name,
-                    size: entry.size,
-                    modified: entry.modified,
+                    size: entry.foreign.size,
+                    modified: entry.foreign.modified,
                 })
             })
             .collect())
     }
 
     fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError> {
-        Ok(local_fs::scan(&self.root, kind)?
+        Ok(local_scan::scan(&self.root, kind)?
             .into_iter()
-            .filter(|entry| foreign::kind(&entry.raw) == Some(kind))
+            .filter(|entry| entry.object.is_none())
+            .map(|entry| entry.foreign)
             .collect())
     }
 
     fn delete_foreign(&self, raw: &str) -> Result<(), BackendError> {
         foreign::validate(raw)?;
-        local_fs::check_parents(&self.root, raw)?;
         self.delete_path(&self.root.join(raw))
     }
 

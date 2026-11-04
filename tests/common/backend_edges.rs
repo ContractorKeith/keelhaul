@@ -77,7 +77,7 @@ pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
         ];
         if kind == Kind::Data {
             raw_names.push(format!("data/ff/{id}")); // wrong shard
-            raw_names.push(format!("data/ZZ/{}", id.to_uppercase()));
+            raw_names.push(format!("data/ab/{}", id.to_uppercase()));
         }
         for raw in &raw_names {
             plant_raw(raw, b"partial");
@@ -102,7 +102,11 @@ pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
                 .collect::<Vec<_>>(),
             raw_names
         );
-        assert!(foreign.iter().all(|entry| entry.size == 7));
+        assert!(
+            foreign
+                .iter()
+                .all(|entry| entry.size == 7 && entry.deletable)
+        );
         // Valid and foreign entries remain disjoint even when both exist.
         b.write(&name(&base), b"complete").unwrap();
         assert_entries(b, kind, &[(name(&base), 8)]);
@@ -124,6 +128,12 @@ pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
         "keys/a..b",
         "keys//junk",
         "keys/./junk",
+        "keys/sub/config",
+        "index/sub/junk",
+        "data/ab/sub/junk",
+        "data/ZZ/junk",
+        "data/ab",
+        "keys/\u{fffd}",
         "other/junk",
         "keys/\\junk",
         "keys/\0junk",
@@ -142,4 +152,28 @@ pub fn foreign_entries(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
         assert!(b.list(kind).unwrap().is_empty());
         assert!(b.list_foreign(kind).unwrap().is_empty());
     }
+}
+
+// Nested files must neither be traversed nor accepted for raw deletion.
+pub fn foreign_depth(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
+    let config = name("config");
+    b.write(&config, b"preserve").unwrap();
+    for raw in [
+        "keys/sub/config",
+        "index/sub/config",
+        "snapshots/sub/config",
+        "locks/sub/config",
+        "data/ab/sub/config",
+    ] {
+        plant_raw(raw, b"nested");
+        assert!(matches!(
+            b.delete_foreign(raw),
+            Err(BackendError::InvalidName(_))
+        ));
+    }
+    for kind in Kind::ALL {
+        assert!(b.list_foreign(kind).unwrap().is_empty());
+    }
+    assert_eq!(b.read(&config).unwrap(), b"preserve");
+    b.delete(&config).unwrap();
 }

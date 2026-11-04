@@ -105,6 +105,7 @@ impl Backend for MemoryBackend {
             .filter(|(raw, _)| foreign::kind(raw) == Some(kind))
             .map(|(raw, stored)| ForeignEntry {
                 raw: raw.clone(),
+                deletable: foreign::validate(raw).is_ok(),
                 size: stored.bytes.len() as u64,
                 modified: Some(stored.modified),
             })
