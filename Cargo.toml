@@ -15,6 +15,16 @@ anyhow = "1"
 getrandom = { version = "0.3", features = ["std"] }
 hex = "0.4"
 
+blake3 = "1"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+zstd = "0.13"
+base64 = "0.22"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+rpassword = "7"
+gethostname = "1"
+uzers = "0.12"
+
 [dev-dependencies]
 tempfile = "3"
 

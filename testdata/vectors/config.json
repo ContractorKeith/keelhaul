@@ -1,0 +1,12 @@
+{
+  "chunker": {
+    "alg": "fastcdc-gear-keyed-v1",
+    "avg": 1048576,
+    "max": 8388608,
+    "min": 524288
+  },
+  "created": "2026-11-04T14:03:22.123456789Z",
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "pack_target": 16777216,
+  "version": 1
+}
