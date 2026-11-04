@@ -8,3 +8,6 @@ pub mod restore;
 pub mod check;
 pub mod paths;
 pub mod verify;
+
+pub mod forget;
+pub mod prune;

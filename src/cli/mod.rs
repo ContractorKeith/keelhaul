@@ -106,6 +106,14 @@ pub(super) enum Command {
         #[arg(long)]
         host: Option<String>,
     },
+    Forget(crate::ops::forget::Options),
+    Prune {
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u8).range(0..=100))]
+        max_unused: u8,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    Unlock,
     Init,
     Key {
         #[command(subcommand)]

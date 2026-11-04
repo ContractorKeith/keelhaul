@@ -10,3 +10,5 @@ pub use snapshots::SnapshotList;
 pub(crate) mod audit;
 
 pub mod trees;
+
+pub mod lock;

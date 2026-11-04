@@ -196,29 +196,7 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
         .unwrap();
     let e = expected([signature("config", "config", "missing")]);
     run(f, seed, "delete config", e.clone(), e);
-    f.reset();
-    let name = &f.header.0;
-    let store = BlobStore::load(&f.repo).unwrap();
-    let ids = store
-        .index
-        .values()
-        .filter(|l| keelhaul::repo::blobs::pack_name(&l.pack).unwrap().as_str() == name)
-        .map(|l| l.blob.id.clone())
-        .collect::<Vec<_>>();
-    f.repo
-        .backend
-        .delete(&ObjectName::new(name).unwrap())
-        .unwrap();
-    let mut c = expected([signature(name, "pack", "missing")]);
-    c.extend(
-        ids.iter()
-            .map(|id| signature(id, "blob", "dangling-reference")),
-    );
-    let mut v = c.clone();
-    for id in ids {
-        v.extend(file_errors(f, &id));
-    }
-    run(f, seed, "delete indexed pack", c, v);
+    delete_indexed_pack(f, seed, &f.header.0);
     f.reset();
     let mut c = Expected::new();
     let mut names = Vec::new();
@@ -253,4 +231,35 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
         c,
         v,
     );
+}
+
+/// Deleted metadata hides descendants even when their chunks also occur elsewhere.
+pub fn delete_indexed_pack(f: &Fixture, seed: u64, name: &str) {
+    f.reset();
+    let store = BlobStore::load(&f.repo).unwrap();
+    let ids = store
+        .index
+        .values()
+        .filter(|l| keelhaul::repo::blobs::pack_name(&l.pack).unwrap().as_str() == name)
+        .map(|l| l.blob.id.clone())
+        .collect::<Vec<_>>();
+    f.repo
+        .backend
+        .delete(&ObjectName::new(name).unwrap())
+        .unwrap();
+    let mut c = expected([signature(name, "pack", "missing")]);
+    c.extend(
+        ids.iter()
+            .map(|id| signature(id, "blob", "dangling-reference")),
+    );
+    let mut v = c.clone();
+    v.extend(
+        f.files
+            .iter()
+            .filter(|file| {
+                !file.tree_packs.contains(name) && file.chunks.iter().any(|id| ids.contains(id))
+            })
+            .map(|file| signature(&file.path, "file", "dangling-reference")),
+    );
+    run(f, seed, "delete indexed pack", c, v);
 }

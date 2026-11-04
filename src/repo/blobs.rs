@@ -35,6 +35,7 @@ pub struct BlobStore<'a, B> {
     index_bytes: u64,
     packs: Vec<Pack>,
     flushed: Instant,
+    flushed_indexes: Vec<String>,
     verified: HashSet<String>,
     headers: HashMap<String, (String, Vec<Blob>)>,
     pub data_blobs_added: u64,
@@ -91,6 +92,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             index_bytes: 0,
             packs: Vec::new(),
             flushed: Instant::now(),
+            flushed_indexes: Vec::new(),
             verified: HashSet::new(),
             headers,
             data_blobs_added: 0,
@@ -225,8 +227,10 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             supersedes: Vec::new(),
             packs: std::mem::take(&mut self.packs),
         };
-        self.repo
+        let id = self
+            .repo
             .write_object("index", Label::Index, &serde_json::to_vec(&index)?)?;
+        self.flushed_indexes.push(id);
         self.flushed = Instant::now();
         self.index_bytes = 0;
         Ok(())

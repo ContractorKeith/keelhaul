@@ -28,12 +28,12 @@ chacha20poly1305 = "0.10"
 argon2 = "0.5"
 zstd = "0.13"
 base64 = "0.22"
-time = { version = "0.3", features = ["formatting", "parsing"] }
+time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 rpassword = "7"
 gethostname = "1"
 uzers = "0.12"
 shell-words = "1.1.1"
-rustix = { version = "1", features = ["fs"] }
+rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
 filetime = "0.2"

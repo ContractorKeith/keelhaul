@@ -25,7 +25,7 @@ fn upload_and_index_failures_release_backpressure_and_preserve_snapshots() {
     }
     // Both failure points occur while other readers and uploads have work:
     // first pack, first index, then a pack after a flushed index.
-    for at in [1, 9, 10] {
+    for at in [2, 10, 11] {
         let copied = MemoryBackend::new();
         for kind in crate::backend::Kind::ALL {
             for entry in repo.backend.list(kind).unwrap() {
@@ -73,7 +73,7 @@ fn upload_and_index_failures_release_backpressure_and_preserve_snapshots() {
             },
         )
         .unwrap();
-        if at == 10 {
+        if at == 11 {
             assert!(rerun.summary.bytes_added < 24 * 1024 * 1024);
         }
         let target = scratch.path().join(format!("rerun-{at}"));

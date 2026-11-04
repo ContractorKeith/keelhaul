@@ -8,7 +8,7 @@ fn upload_errors_name_the_object_and_panics_exit_one() {
         backup(&root);
         fs::write(root.join("source/new"), b"new data").unwrap();
         let output = command(&root)
-            .env("KEELHAUL_FAULT", format!("write:1:{action}"))
+            .env("KEELHAUL_FAULT", format!("write:2:{action}"))
             .arg("backup")
             .arg(root.join("source"))
             .output()

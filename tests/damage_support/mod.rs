@@ -17,10 +17,15 @@ use std::collections::BTreeSet;
 use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
 pub type Objects = BTreeSet<String>;
 pub type Expected = BTreeSet<(String, String, String)>;
+pub struct File {
+    pub path: String,
+    pub chunks: Vec<String>,
+    pub tree_packs: Objects,
+}
 pub struct Fixture {
     pub repo: Repository<MemoryBackend>,
     pub stored: Vec<(String, Vec<u8>)>,
-    pub files: Vec<(String, Vec<String>)>,
+    pub files: Vec<File>,
     pub roots: Vec<String>,
     pub data: (String, u64, String),
     pub tree: (String, u64, String),
@@ -57,29 +62,7 @@ impl Fixture {
             .iter()
             .find(|l| l.blob.kind == BlobKind::Data && l.pack != tree.pack)
             .unwrap();
-        let mut files = Vec::new();
-        for (snapshot, s) in repo.snapshots().unwrap() {
-            let mut work = vec![(s.tree, PathBuf::new(), true)];
-            while let Some((id, base, root)) = work.pop() {
-                let tree = Tree::parse(&store.read(BlobKind::Tree, &id).unwrap()).unwrap();
-                for entry in tree.entries {
-                    let path = if root {
-                        PathBuf::from(
-                            keelhaul::format::snapshot::decode_root(entry.name.as_ref().unwrap())
-                                .unwrap(),
-                        )
-                    } else {
-                        base.join(OsString::from_vec(entry.name_bytes().unwrap()))
-                    };
-                    match entry.node {
-                        Node::Dir { subtree } => work.push((subtree, path, false)),
-                        Node::File { content, .. } => files
-                            .push((format!("snapshots/{snapshot}:{}", path.display()), content)),
-                        _ => {}
-                    }
-                }
-            }
-        }
+        let files = file_graph(&repo, &mut store);
         let data = (
             keelhaul::repo::blobs::pack_name(&data.pack)
                 .unwrap()
@@ -94,16 +77,16 @@ impl Fixture {
             tree.blob.offset,
             tree.blob.id,
         );
-        let pure = repo
+        let non_root = repo
             .backend
             .list(Kind::Data)
             .unwrap()
             .into_iter()
             .find(|e| e.name.as_str() != tree.0)
             .unwrap();
-        let bytes = repo.backend.read(&pure.name).unwrap();
+        let bytes = repo.backend.read(&non_root.name).unwrap();
         let len = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()) as usize;
-        let header = (pure.name.to_string(), (bytes.len() - 4 - len) as u64);
+        let header = (non_root.name.to_string(), (bytes.len() - 4 - len) as u64);
         let trailer = tree.0.clone();
         let index = repo.backend.list(Kind::Index).unwrap()[0].name.to_string();
         let snapshot = repo.backend.list(Kind::Snapshots).unwrap()[0]
@@ -148,11 +131,15 @@ impl Fixture {
     pub fn plant(&self, name: &str, bytes: &[u8]) {
         self.repo.backend.plant_raw(name, bytes).unwrap();
     }
+    pub fn recapture_files(&mut self) {
+        let mut store = BlobStore::load(&self.repo).unwrap();
+        self.files = file_graph(&self.repo, &mut store);
+    }
     pub fn files_using(&self, id: &str) -> Objects {
         self.files
             .iter()
-            .filter(|(_, chunks)| chunks.iter().any(|c| c == id))
-            .map(|(p, _)| p.clone())
+            .filter(|file| file.chunks.iter().any(|c| c == id))
+            .map(|file| file.path.clone())
             .collect()
     }
 }
@@ -201,3 +188,43 @@ pub fn file_errors(f: &Fixture, id: &str) -> Expected {
 }
 pub mod authenticated;
 pub mod byte_cases;
+
+// Capture expected reachability from the intact graph, independently of audit output.
+fn file_graph(
+    repo: &Repository<MemoryBackend>,
+    store: &mut BlobStore<'_, MemoryBackend>,
+) -> Vec<File> {
+    let mut files = Vec::new();
+    for (snapshot, s) in repo.snapshots().unwrap() {
+        let mut work = vec![(s.tree, PathBuf::new(), true, Objects::new())];
+        while let Some((id, base, root, mut ancestors)) = work.pop() {
+            let location = &store.index[&(BlobKind::Tree, id.clone())];
+            ancestors.insert(
+                keelhaul::repo::blobs::pack_name(&location.pack)
+                    .unwrap()
+                    .to_string(),
+            );
+            let tree = Tree::parse(&store.read(BlobKind::Tree, &id).unwrap()).unwrap();
+            for entry in tree.entries {
+                let path = if root {
+                    PathBuf::from(
+                        keelhaul::format::snapshot::decode_root(entry.name.as_ref().unwrap())
+                            .unwrap(),
+                    )
+                } else {
+                    base.join(OsString::from_vec(entry.name_bytes().unwrap()))
+                };
+                match entry.node {
+                    Node::Dir { subtree } => work.push((subtree, path, false, ancestors.clone())),
+                    Node::File { content, .. } => files.push(File {
+                        path: format!("snapshots/{snapshot}:{}", path.display()),
+                        chunks: content,
+                        tree_packs: ancestors.clone(),
+                    }),
+                    _ => {}
+                }
+            }
+        }
+    }
+    files
+}

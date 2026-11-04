@@ -31,6 +31,10 @@ pub enum Error {
     },
     #[error("{0}")]
     Refused(String),
+    #[error("{0}")]
+    Locked(String),
+    #[error("{0}")]
+    Usage(String),
     #[error(transparent)]
     Slot(#[from] slot::Error),
     #[error(transparent)]
@@ -166,7 +170,12 @@ impl<B: Backend> Repository<B> {
     }
 
     pub fn remove_key(&self, id: &str) -> Result<(), Error> {
-        // M5: exclusive lock
+        super::lock::with(&self.backend, self.subkeys(), true, |_| {
+            self.remove_key_locked(id)
+        })
+    }
+
+    fn remove_key_locked(&self, id: &str) -> Result<(), Error> {
         let slots = self.list_keys()?;
         if !slots.iter().any(|(found, _)| found == id) {
             return Err(Error::Refused(format!("key slot {id} not found")));

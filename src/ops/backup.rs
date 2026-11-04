@@ -2,6 +2,7 @@ mod excludes;
 mod files;
 mod parent;
 mod pipeline;
+mod publication;
 #[cfg(test)]
 mod tests;
 mod trees;
@@ -90,7 +91,25 @@ pub fn backup_with_options<B: Backend>(
     tags: Vec<String>,
     options: &Options,
 ) -> Result<Report, Error> {
-    // M5: shared lock
+    backup_with_clock(repo, paths, tags, options, &crate::repo::lock::SystemClock)
+}
+pub fn backup_with_clock<B: Backend>(
+    repo: &Repository<B>,
+    paths: &[PathBuf],
+    tags: Vec<String>,
+    options: &Options,
+    clock: &dyn crate::repo::lock::Clock,
+) -> Result<Report, Error> {
+    let lock = crate::repo::lock::Guard::acquire(&repo.backend, repo.subkeys(), false, clock)?;
+    lock.run(|lock| backup_locked(repo, paths, tags, options, lock))
+}
+fn backup_locked<B: Backend>(
+    repo: &Repository<B>,
+    paths: &[PathBuf],
+    tags: Vec<String>,
+    options: &Options,
+    lock: &crate::repo::lock::Guard<'_, B>,
+) -> Result<Report, Error> {
     if !(1..=256).contains(&options.jobs) {
         return Err(Error::Refused("jobs must be between 1 and 256".into()));
     }
@@ -160,11 +179,13 @@ pub fn backup_with_options<B: Backend>(
         program: format!("keelhaul {}", env!("CARGO_PKG_VERSION")),
         summary: summary.clone(),
     };
+    lock.self_check()?;
     let id = repo.write_object(
         "snapshots",
         Label::Snapshot,
         &serde_json::to_vec(&snapshot)?,
     )?;
+    publication::check(repo, &id, &result.blobs)?;
     Ok(Report {
         snapshot: id,
         summary: ReportSummary {

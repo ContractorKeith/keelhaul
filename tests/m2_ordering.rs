@@ -66,7 +66,15 @@ fn indexes_flush_after_eight_packs_and_interrupted_snapshot_reuses_all_flushed_b
     repo.backend.writes.lock().unwrap().clear();
     assert!(backup(&repo, std::slice::from_ref(&source), vec![]).is_err());
     assert!(repo.snapshots().unwrap().is_empty());
-    let writes = repo.backend.writes.lock().unwrap().clone();
+    let writes = repo
+        .backend
+        .writes
+        .lock()
+        .unwrap()
+        .iter()
+        .copied()
+        .filter(|kind| *kind != Kind::Locks)
+        .collect::<Vec<_>>();
     let first = writes.iter().position(|k| *k == Kind::Index).unwrap();
     assert_eq!(first, 8);
     assert!(writes[..first].iter().all(|k| *k == Kind::Data));

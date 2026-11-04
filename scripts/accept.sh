@@ -98,6 +98,15 @@ touch "$fixture/random9"
 "$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --json > "$scratch/incremental.json"
 grep -q '"files_read":1' "$scratch/incremental.json"
 
+echo "== M5 retention and prune"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --json > "$scratch/m5-first.json"
+printf 'retention contents\n' > "$fixture/retention"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" backup "$fixture" --json > "$scratch/m5-second.json"
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" forget --keep-last 1 --prune --json
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" verify --json
+"$bin" -r "$scratch/repo" --key-file "$scratch/key" restore latest --target "$scratch/m5-out"
+diff -r "$fixture" "$scratch/m5-out$fixture"
+
 echo "== M3 check and verify"
 "$bin" -r "$scratch/repo" --key-file "$scratch/key" check --json > "$scratch/check.json"
 grep -q '"damage":\[\]' "$scratch/check.json"

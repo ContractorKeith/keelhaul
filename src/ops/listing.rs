@@ -39,6 +39,16 @@ pub fn ls_for_host<B: Backend>(
     filter: Option<&Path>,
     host: Option<&str>,
 ) -> Result<Vec<Listed>, Error> {
+    crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
+        ls_for_host_locked(repo, selector, filter, host)
+    })
+}
+fn ls_for_host_locked<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    filter: Option<&Path>,
+    host: Option<&str>,
+) -> Result<Vec<Listed>, Error> {
     let (_, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
     let mut output = Vec::new();

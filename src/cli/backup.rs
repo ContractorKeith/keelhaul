@@ -58,7 +58,9 @@ pub(super) fn run<B: Backend>(
                 .as_deref()
                 .map(|p| ops::paths::normalize_root(std::path::Path::new(p)))
                 .transpose()?;
-            let scanned = repo.scan_snapshots()?;
+            let scanned = crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
+                repo.scan_snapshots()
+            })?;
             let snapshots = scanned.entries;
             let ids = snapshots
                 .iter()

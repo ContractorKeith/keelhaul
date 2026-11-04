@@ -58,6 +58,55 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     }
                     return Ok(());
                 }
+                Command::Forget(ref options) => {
+                    options.validate()?;
+                    let repo = Repository::open(backend, &secret)?;
+                    let report = crate::ops::forget::forget(&repo, options)?;
+                    let text = report
+                        .groups
+                        .iter()
+                        .flat_map(|g| {
+                            g.keep
+                                .iter()
+                                .map(|s| format!("keep {} ({})", s.id, s.reasons.join(", ")))
+                                .chain(g.remove.iter().map(|id| format!("remove {id}")))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (serde_json::to_value(report)?, text)
+                }
+                Command::Prune {
+                    max_unused,
+                    dry_run,
+                } => {
+                    let repo = Repository::open(backend, &secret)?;
+                    let summary = crate::ops::prune::prune(&repo, max_unused, dry_run)?;
+                    let mut text = format!(
+                        "{} packs removed, {} repacked, {} bytes freed{}",
+                        summary.packs_removed,
+                        summary.packs_repacked,
+                        summary.bytes_freed,
+                        if dry_run { " (dry run)" } else { "" }
+                    );
+                    for warning in &summary.warnings {
+                        text.push_str(&format!("\nwarning: {warning}"));
+                    }
+                    (serde_json::to_value(summary)?, text)
+                }
+                Command::Unlock => {
+                    let repo = Repository::open(backend, &secret)?;
+                    let removed = crate::repo::lock::unlock(
+                        &repo.backend,
+                        &repo.subkeys(),
+                        &crate::repo::lock::SystemClock,
+                    )?;
+                    let text = removed
+                        .iter()
+                        .map(|id| format!("removed {id}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (serde_json::json!({"removed": removed}), text)
+                }
                 Command::Key { command } => {
                     let repo = Repository::open(backend, &secret)?;
                     match command {

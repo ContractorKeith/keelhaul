@@ -330,15 +330,16 @@ A lock object is an envelope (label `keelhaul/lock`) whose payload is:
   ignored by acquisition.
 - **Stale:** `refreshed` older than 30 minutes. A stale lock that is not dead still blocks:
   its process may be suspended (a sleeping laptop) and resume mid-operation. Only an explicit
-  `unlock` deletes stale and dead locks; it never deletes a lock refreshed in the last 30
-  minutes.
+  `unlock` deletes stale locks and dead locks; it never deletes a lock refreshed in the last 30
+  minutes unless that lock is dead.
 - **Self-check:** before writing a snapshot, backup lists `locks/`. If its current lock
   object is gone, or its last successful refresh is older than 30 minutes, backup aborts
   without writing the snapshot.
-- **Publish check:** after writing its snapshot, backup lists `data/` and confirms that every
-  pack holding a blob the new snapshot references (through the live index) still exists. If
-  any is missing, it deletes its own snapshot and fails with exit 1; the data it needs was
-  removed by a prune that ran after `unlock`, and a rerun stores it again.
+- **Publish check:** after writing its snapshot, backup re-reads the live index and lists `data/`
+  once. It confirms that every blob the new snapshot references is still in that live index
+  at a pack that still exists. If any blob has no such copy, it deletes its own snapshot and
+  fails with exit 1; the data it needs was removed by a prune that ran after `unlock`, and a
+  rerun stores it again.
 
 | Operation | Lock |
 |---|---|

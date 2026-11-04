@@ -16,7 +16,7 @@ use crate::{
     secret::Secret,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     rc::Rc,
 };
 pub(super) type TreeLocation = (String, String, u64, u64, u64);
@@ -32,6 +32,7 @@ pub(super) struct State<'a, B> {
     pub live: HashMap<BlobKey, Vec<(String, Blob)>>,
     pub used: HashSet<BlobKey>,
     pub bad: HashSet<BlobKey>,
+    pub(super) tree_copy_damage: BTreeSet<crate::damage::Damage>,
     pub(super) tree_cache: HashMap<TreeLocation, Option<Rc<Tree>>>,
 }
 impl<'a, B: Backend> State<'a, B> {
@@ -46,11 +47,11 @@ impl<'a, B: Backend> State<'a, B> {
             live: HashMap::new(),
             used: HashSet::new(),
             bad: HashSet::new(),
+            tree_copy_damage: BTreeSet::new(),
             tree_cache: HashMap::new(),
         }
     }
     pub fn metadata(&mut self) -> Result<(), Error> {
-        // M5: shared lock
         inventory::scan(self)?;
         inventory::index(self)?;
         Ok(())
@@ -85,9 +86,15 @@ impl<'a, B: Backend> State<'a, B> {
                 Tree::parse(&bytes)
                     .map_err(|e| inventory::bad(&blob.id, &format!("{e}; pack {name}")))
             });
+        let previous = self.report.damage.len();
         let tree = self.report.collect(result)?.map(Rc::new);
+        self.tree_copy_damage
+            .extend(self.report.damage[previous..].iter().cloned());
         self.tree_cache.insert(key, tree.clone());
         Ok(tree)
+    }
+    pub(super) fn reachable(&mut self) -> Result<(), Error> {
+        trees::walk(self, false)
     }
     pub fn finish(mut self, verify: bool) -> Result<Report, Error> {
         self.audit_tree_blobs()?;
@@ -148,15 +155,16 @@ impl<'a, B: Backend> State<'a, B> {
     }
 }
 pub fn check<B: Backend>(repo: &Repository<B>) -> Result<Report, Error> {
-    let mut state = State::new(&repo.backend, repo.subkeys());
-    state.metadata()?;
-    state.finish(false)
+    crate::repo::lock::with_audit(&repo.backend, repo.subkeys(), |damage| {
+        run_check(State::new(&repo.backend, repo.subkeys()), damage)
+    })
 }
 /// Authenticate without requiring a valid config: audit it with the other objects.
 pub fn check_backend<B: Backend>(backend: &B, secret: &Secret) -> Result<Report, Error> {
-    let mut state = State::new(backend, Repository::unlock(backend, secret)?.subkeys());
-    state.metadata()?;
-    state.finish(false)
+    let master = Repository::unlock(backend, secret)?;
+    crate::repo::lock::with_audit(backend, master.subkeys(), |damage| {
+        run_check(State::new(backend, master.subkeys()), damage)
+    })
 }
 pub(super) fn name_id(name: &ObjectName) -> String {
     name.as_str()
@@ -174,4 +182,13 @@ pub(super) fn tree_key(pack: &str, blob: &Blob) -> TreeLocation {
         blob.length,
         blob.raw_length,
     )
+}
+
+fn run_check<B: Backend>(
+    mut state: State<'_, B>,
+    damage: Vec<crate::damage::Damage>,
+) -> Result<Report, Error> {
+    state.report.damage.extend(damage);
+    state.metadata()?;
+    state.finish(false)
 }
