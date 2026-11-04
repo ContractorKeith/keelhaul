@@ -1,9 +1,9 @@
 //! Blocking storage of validated repository object names and opaque bytes.
+mod boxed;
 mod foreign;
 pub mod local;
 mod local_fs;
 mod local_scan;
-pub mod location;
 pub mod memory;
 pub mod s3;
 
@@ -163,6 +163,11 @@ pub struct ForeignEntry {
 /// Writes are create-once: an identical retry succeeds; different bytes fail.
 /// Ranges are clipped at EOF, including offsets beyond EOF. Lists are sorted by name.
 pub trait Backend: Send + Sync {
+    /// Whether a local secret destination lies inside this repository.
+    /// Remote storage cannot contain a local filesystem destination.
+    fn contains_destination(&self, _path: &Path) -> Result<bool, BackendError> {
+        Ok(false)
+    }
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError>;
     fn read(&self, name: &ObjectName) -> Result<Vec<u8>, BackendError>;
     fn read_range(&self, name: &ObjectName, offset: u64, len: u64)

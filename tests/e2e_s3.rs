@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "test assertions and fixtures may panic")]
+#[path = "common/s3_cli.rs"]
+mod cli_tests;
 mod common;
 #[path = "common/docker.rs"]
 mod docker;

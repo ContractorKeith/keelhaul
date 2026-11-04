@@ -125,6 +125,10 @@ impl LocalBackend {
 }
 
 impl Backend for LocalBackend {
+    fn contains_destination(&self, path: &Path) -> Result<bool, BackendError> {
+        LocalBackend::contains_destination(self, path)
+    }
+
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
         let path = self.path(name);
         self.write_object(name, &path, bytes)

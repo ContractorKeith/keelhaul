@@ -8,6 +8,8 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(name = "keelhaul", version, about)]
 pub struct Cli {
+    /// Repository path, sftp:[user@]host:/path, or s3:https://host/bucket[/prefix].
+    /// S3 bucket is the first path segment; endpoint path prefixes are unsupported.
     #[arg(short = 'r', long, env = "KEELHAUL_REPO", global = true)]
     repo: Option<String>,
     #[arg(
