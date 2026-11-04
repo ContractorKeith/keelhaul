@@ -97,7 +97,10 @@ fn exclusive_lock_blocks_every_locked_command_and_unlock_preserves_it() {
 #[test]
 fn forget_usage_and_explicit_dry_run_have_stable_json_shape() {
     let scratch = tempfile::tempdir().unwrap();
-    let root = scratch.path();
+    let real = fs::canonicalize(scratch.path()).unwrap();
+    let alias = real.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let root = alias.as_path();
     fs::write(root.join("key"), [19; 32]).unwrap();
     let repo = Repository::init(
         LocalBackend::new(root.join("repo")).unwrap(),
@@ -106,6 +109,11 @@ fn forget_usage_and_explicit_dry_run_have_stable_json_shape() {
     .unwrap();
     let source = root.join("source");
     fs::write(&source, b"data").unwrap();
+    let stored_path = fs::canonicalize(&source).unwrap();
+    assert_ne!(
+        source, stored_path,
+        "fixture must exercise path normalization"
+    );
     let snap = backup(&repo, std::slice::from_ref(&source), vec![])
         .unwrap()
         .snapshot;
@@ -127,7 +135,7 @@ fn forget_usage_and_explicit_dry_run_have_stable_json_shape() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({"groups":[{"key":{"host":keelhaul::host::hostname(),"paths":[source.to_str().unwrap()]},"keep":[],"remove":[snap]}]})
+        serde_json::json!({"groups":[{"key":{"host":keelhaul::host::hostname(),"paths":[stored_path.to_str().unwrap()]},"keep":[],"remove":[snap]}]})
     );
     assert_eq!(repo.backend.list(Kind::Snapshots).unwrap().len(), 1);
 }
