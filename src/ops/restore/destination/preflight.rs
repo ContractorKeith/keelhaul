@@ -5,11 +5,12 @@ use std::{
     os::unix::fs::MetadataExt,
     path::PathBuf,
 };
-pub(in crate::ops::restore) struct Preflight {
+pub(in crate::ops::restore) struct Preflight<'a> {
+    destination: &'a Destination,
     pub reused: HashSet<PathBuf>,
-    preserved: HashMap<PathBuf, (File, Timespec)>,
+    preserved: HashMap<PathBuf, (FileIdentity, Timespec)>,
 }
-impl Preflight {
+impl Preflight<'_> {
     fn remember(&mut self, path: PathBuf, file: &File) -> Result<(), Error> {
         if !self.reused.insert(path.clone()) {
             return Ok(());
@@ -18,7 +19,7 @@ impl Preflight {
         self.preserved.insert(
             path,
             (
-                file.try_clone()?,
+                FileIdentity::from_stat(&fs::fstat(file).map_err(os)?),
                 Timespec {
                     tv_sec: m.mtime(),
                     tv_nsec: m.mtime_nsec(),
@@ -28,13 +29,20 @@ impl Preflight {
         Ok(())
     }
     pub fn restore_mtimes(&self) -> Result<(), Error> {
-        for (file, mtime) in self.preserved.values() {
+        for (path, (identity, mtime)) in &self.preserved {
+            let file = self.destination.existing_directory(path)?;
+            if FileIdentity::from_stat(&fs::fstat(&file).map_err(os)?) != *identity {
+                return Err(Error::Refused(format!(
+                    "reused directory was replaced: {}",
+                    path.display()
+                )));
+            }
             let current = file.metadata()?;
             if current.mtime() == mtime.tv_sec && current.mtime_nsec() == mtime.tv_nsec {
                 continue;
             }
             fs::futimens(
-                file,
+                &file,
                 &Timestamps {
                     last_access: Timespec {
                         tv_sec: 0,
@@ -48,14 +56,15 @@ impl Preflight {
         Ok(())
     }
 }
-impl Drop for Preflight {
+impl Drop for Preflight<'_> {
     fn drop(&mut self) {
         let _ = self.restore_mtimes();
     }
 }
 impl Destination {
-    pub fn preflight(&self, items: &[super::super::plan::Item]) -> Result<Preflight, Error> {
+    pub fn preflight(&self, items: &[super::super::plan::Item]) -> Result<Preflight<'_>, Error> {
         let mut result = Preflight {
+            destination: self,
             reused: HashSet::new(),
             preserved: HashMap::new(),
         };

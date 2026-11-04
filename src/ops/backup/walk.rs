@@ -30,13 +30,8 @@ enum Work {
 }
 impl<B: Backend> Walker<'_, B> {
     fn skip(&mut self, path: &Path, reason: impl ToString) {
-        let reason = reason.to_string();
-        eprintln!("warning: {}: {reason}", path.display());
         self.summary.files_skipped += 1;
-        self.skipped.push(Skipped {
-            path: path.to_string_lossy().into_owned(),
-            reason,
-        });
+        self.skipped.push(super::skipped(path, reason));
     }
     pub fn walk(&mut self, path: &Path, name: &[u8]) -> Result<Option<Entry>, Error> {
         let mut work = vec![Work::Visit(path.into(), name.into())];

@@ -181,9 +181,14 @@ fn missing_source_does_not_back_up_a_live_file_at_its_lexical_fallback() {
     json(cli(root, &["init", "--json"]));
     std::fs::write(root.join("victim"), b"not the requested path").unwrap();
     let missing = root.join("missing/../victim");
-    let report = json(cli(root, &["backup", missing.to_str().unwrap(), "--json"]));
-    assert_eq!(report["summary"]["files_new"], 0);
-    assert_eq!(report["summary"]["files_skipped"], 1);
+    let failed = cli(root, &["backup", missing.to_str().unwrap(), "--json"]);
+    assert_eq!(failed.status.code(), Some(1));
+    assert!(
+        json(cli(root, &["snapshots", "--json"]))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let mixed = json(cli(
         root,
         &[
@@ -194,4 +199,5 @@ fn missing_source_does_not_back_up_a_live_file_at_its_lexical_fallback() {
         ],
     ));
     assert_eq!(mixed["summary"]["files_new"], 1);
+    assert_eq!(mixed["summary"]["files_skipped"], 1);
 }

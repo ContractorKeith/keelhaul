@@ -9,7 +9,7 @@ use crate::{
     repo::{Error, Repository, blobs::BlobStore},
 };
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walk::Walker;
 #[derive(Debug, Serialize)]
 pub struct Skipped {
@@ -22,26 +22,49 @@ pub struct Report {
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
 }
+fn skipped(path: &Path, reason: impl ToString) -> Skipped {
+    let reason = reason.to_string();
+    eprintln!("warning: {}: {reason}", path.display());
+    Skipped {
+        path: path.to_string_lossy().into_owned(),
+        reason,
+    }
+}
 pub use super::paths::normalize_root as absolute;
 pub fn backup<B: Backend>(
     repo: &Repository<B>,
     paths: &[PathBuf],
     tags: Vec<String>,
 ) -> Result<Report, Error> {
-    let mut paths = paths
+    if paths.is_empty() {
+        return Err(Error::Refused("backup needs at least one path".into()));
+    }
+    let mut failures = Vec::new();
+    let mut roots = Vec::new();
+    for input in paths {
+        let normalized = match absolute(input) {
+            Ok(path) => path,
+            Err(error) => {
+                failures.push(skipped(input, error));
+                continue;
+            }
+        };
+        if let Err(error) = std::fs::symlink_metadata(input) {
+            failures.push(skipped(input, error));
+            continue;
+        }
+        roots.push((normalized, input));
+    }
+    roots.sort_by(|a, b| a.0.cmp(&b.0));
+    roots.dedup_by(|a, b| a.0 == b.0);
+    if roots.is_empty() {
+        return Err(Error::Refused(
+            "no backup roots could be read; no snapshot written".into(),
+        ));
+    }
+    let strings = roots
         .iter()
-        .map(|input| {
-            absolute(input).map(|normalized| {
-                let exists = std::fs::symlink_metadata(input).is_ok();
-                (normalized, input, exists)
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    paths.sort_by(|a, b| a.0.cmp(&b.0).then(b.2.cmp(&a.2)));
-    paths.dedup_by(|a, b| a.0 == b.0);
-    let strings = paths
-        .iter()
-        .map(|(p, _, _)| {
+        .map(|(p, _)| {
             p.to_str().map(String::from).ok_or_else(|| {
                 Error::Refused(
                     "backup root paths must be UTF-8; names within them may be arbitrary bytes"
@@ -50,22 +73,29 @@ pub fn backup<B: Backend>(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if strings.is_empty() {
-        return Err(Error::Refused("backup needs at least one path".into()));
-    }
     let mut walker = Walker {
         store: BlobStore::load(repo)?,
-        summary: Summary::default(),
-        skipped: Vec::new(),
+        summary: Summary {
+            files_skipped: failures.len() as u64,
+            ..Summary::default()
+        },
+        skipped: failures,
         gear: repo.chunker_key(),
     };
     let mut entries = Vec::new();
-    for ((_, input, _), text) in paths.iter().zip(&strings) {
+    let mut saved_paths = Vec::new();
+    for ((_, input), text) in roots.iter().zip(&strings) {
         // A historical lexical fallback is a name, not permission to read a
         // different live file when the supplied source path cannot be resolved.
         if let Some(entry) = walker.walk(input, root_name(text).as_bytes())? {
             entries.push(entry);
+            saved_paths.push(text.clone());
         }
+    }
+    if entries.is_empty() {
+        return Err(Error::Refused(
+            "no backup roots could be read; no snapshot written".into(),
+        ));
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     let tree = walker.store.add(
@@ -83,7 +113,7 @@ pub fn backup<B: Backend>(
         time: crate::format::timestamp(),
         host: crate::host::hostname(),
         username: crate::host::username(),
-        paths: strings,
+        paths: saved_paths,
         tags,
         excludes: Vec::new(),
         tree,

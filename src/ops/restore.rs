@@ -1,17 +1,14 @@
 //! Preflight every destination, then publish only completely verified files.
 mod destination;
+mod files;
 mod plan;
 use crate::{
     backend::Backend,
-    format::{pack::BlobKind, tree::Node},
+    format::tree::Node,
     repo::{Error, Repository, blobs::BlobStore},
 };
 use serde::Serialize;
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 #[derive(Debug, Serialize)]
 pub struct Damaged {
     pub object: String,
@@ -62,7 +59,7 @@ pub fn restore_for_host<B: Backend>(
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)?;
     let preflight = destination.preflight(&items)?;
-    let mut hardlinks: HashMap<(u64, u64), (PathBuf, u64, Vec<String>)> = HashMap::new();
+    let mut hardlinks = files::Hardlinks::new();
     for item in &items {
         let path = &item.path;
         let outcome = (|| {
@@ -80,36 +77,8 @@ pub fn restore_for_host<B: Backend>(
                     use std::os::unix::ffi::OsStringExt;
                     destination.symlink(path, &std::ffi::OsString::from_vec(raw), &item.entry)?;
                 }
-                Node::File { size, content } => {
-                    item.entry
-                        .validate_content_lengths(|id| {
-                            store
-                                .raw_length(BlobKind::Data, id)
-                                .map_err(|e| crate::format::ParseError(e.to_string()))
-                        })
-                        .map_err(|e| super::listing::damage(&item.object, &e.to_string()))?;
-                    let key = (item.entry.device, item.entry.inode);
-                    if item.entry.links > 1
-                        && let Some((first, first_size, first_content)) = hardlinks.get(&key)
-                    {
-                        if first_size != size || first_content != content {
-                            return Err(super::listing::damage(
-                                &item.object,
-                                "inconsistent hardlink content",
-                            ));
-                        }
-                        destination.hardlink(first, path)?;
-                    } else {
-                        let mut temp = destination.temporary(path)?;
-                        for id in content {
-                            let bytes = store.read(BlobKind::Data, id)?;
-                            temp.file.write_all(&bytes)?;
-                        }
-                        temp.publish(&item.entry)?;
-                        if item.entry.links > 1 {
-                            hardlinks.insert(key, (path.clone(), *size, content.clone()));
-                        }
-                    }
+                Node::File { .. } => {
+                    files::restore_file(&destination, &mut store, item, &mut hardlinks)?
                 }
             }
             Ok(())

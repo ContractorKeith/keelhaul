@@ -33,6 +33,12 @@ impl Destination {
         Ok(Self { root })
     }
     fn directory(&self, path: &Path) -> Result<File, Error> {
+        self.walk_directory(path, true)
+    }
+    fn existing_directory(&self, path: &Path) -> Result<File, Error> {
+        self.walk_directory(path, false)
+    }
+    fn walk_directory(&self, path: &Path, create: bool) -> Result<File, Error> {
         let mut current = self.root.try_clone()?;
         for component in path.components() {
             let Component::Normal(name) = component else {
@@ -40,7 +46,7 @@ impl Destination {
             };
             match fs::openat(&current, name, DIRECTORY, Mode::empty()) {
                 Ok(fd) => current = fd.into(),
-                Err(rustix::io::Errno::NOENT) => {
+                Err(rustix::io::Errno::NOENT) if create => {
                     fs::mkdirat(&current, name, Mode::from_raw_mode(0o700)).map_err(os)?;
                     current = fs::openat(&current, name, DIRECTORY, Mode::empty())
                         .map_err(os)?
@@ -96,10 +102,36 @@ impl Destination {
         .map_err(os)?;
         fs::utimensat(&parent, &name, &times(entry)?, AtFlags::SYMLINK_NOFOLLOW).map_err(os)
     }
-    pub fn hardlink(&self, first: &Path, path: &Path) -> Result<(), Error> {
-        let (old_parent, old_name) = self.parent(first)?;
+    pub fn hardlink(
+        &self,
+        first: &Path,
+        path: &Path,
+        expected: FileIdentity,
+    ) -> Result<bool, Error> {
+        let Some(parent_path) = first.parent() else {
+            return Ok(false);
+        };
+        let Some(old_name) = first.file_name() else {
+            return Ok(false);
+        };
+        let old_parent = match self.existing_directory(parent_path) {
+            Ok(parent) => parent,
+            Err(_) => return Ok(false),
+        };
+        let stat = match fs::statat(&old_parent, old_name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(_) => return Ok(false),
+        };
+        if fs::FileType::from_raw_mode(stat.st_mode) != fs::FileType::RegularFile
+            || FileIdentity::from_stat(&stat) != expected
+        {
+            return Ok(false);
+        }
         let (parent, name) = self.parent(path)?;
-        fs::linkat(&old_parent, &old_name, &parent, &name, AtFlags::empty()).map_err(os)
+        // A writer with access to the target can still replace the source between
+        // this identity check and linkat, causing the link to use their bytes.
+        fs::linkat(&old_parent, old_name, &parent, &name, AtFlags::empty()).map_err(os)?;
+        Ok(true)
     }
     pub fn temporary(&self, path: &Path) -> Result<Temporary, Error> {
         let (parent, final_name) = self.parent(path)?;
@@ -126,6 +158,19 @@ impl Destination {
         apply(&self.directory(path)?, entry)
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FileIdentity {
+    device: fs::Dev,
+    inode: u64,
+}
+impl FileIdentity {
+    fn from_stat(stat: &fs::Stat) -> Self {
+        Self {
+            device: stat.st_dev,
+            inode: stat.st_ino,
+        }
+    }
+}
 pub(super) struct Temporary {
     parent: File,
     name: OsString,
@@ -133,7 +178,7 @@ pub(super) struct Temporary {
     pub file: File,
 }
 impl Temporary {
-    pub fn publish(&self, entry: &Entry) -> Result<(), Error> {
+    pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
         self.file.sync_all()?;
         let renamed = fs::renameat_with(
             &self.parent,
@@ -159,7 +204,8 @@ impl Temporary {
         apply(&self.file, entry)?;
         self.file.sync_all()?;
         self.parent.sync_all()?;
-        Ok(())
+        let stat = fs::fstat(&self.file).map_err(os)?;
+        Ok(FileIdentity::from_stat(&stat))
     }
 }
 impl Drop for Temporary {
