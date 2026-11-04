@@ -7,6 +7,7 @@ set -eu
 cd "$(dirname "$0")/.."
 scratch_root="${TMPDIR:-/tmp}"
 scratch="$(mktemp -d "$scratch_root/keelhaul-accept.XXXXXX")"
+scratch="$(cd "$scratch" && pwd -P)"
 trap 'rm -r "$scratch"' EXIT
 
 echo "== gate"

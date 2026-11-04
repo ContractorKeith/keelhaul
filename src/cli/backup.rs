@@ -27,6 +27,10 @@ pub(super) fn run<B: Backend>(
             }
         }
         Command::Snapshots { host, tag, path } => {
+            let path = path
+                .as_deref()
+                .map(|p| ops::paths::normalize_root(std::path::Path::new(p)))
+                .transpose()?;
             let scanned = repo.scan_snapshots()?;
             let snapshots = scanned.entries;
             let ids = snapshots
@@ -38,7 +42,9 @@ pub(super) fn run<B: Backend>(
                 .filter(|(_, s)| {
                     host.as_ref().is_none_or(|h| h == &s.host)
                         && tag.as_ref().is_none_or(|t| s.tags.contains(t))
-                        && path.as_ref().is_none_or(|p| s.paths.contains(p))
+                        && path.as_ref().is_none_or(|p| {
+                            s.paths.iter().any(|saved| std::path::Path::new(saved) == p)
+                        })
                 })
                 .collect::<Vec<_>>();
             if json {

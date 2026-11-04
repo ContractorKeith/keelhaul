@@ -7,11 +7,12 @@ use keelhaul::{
 #[test]
 fn listing_is_preorder() {
     let d = tempfile::tempdir().unwrap();
-    let source = d.path().join("source");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let source = root.as_path().join("source");
     std::fs::create_dir_all(source.join("dir")).unwrap();
     std::fs::write(source.join("dir/leaf"), b"bytes").unwrap();
     let repo = Repository::init(
-        LocalBackend::new(d.path().join("repo")).unwrap(),
+        LocalBackend::new(root.as_path().join("repo")).unwrap(),
         &Secret::KeyFile([7; 32]),
     )
     .unwrap();
@@ -31,15 +32,16 @@ fn json_paths_and_cli_filter_preserve_non_utf8_bytes() {
         process::Command,
     };
     let d = tempfile::tempdir().unwrap();
-    let source = d.path().join("source");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let source = root.as_path().join("source");
     std::fs::create_dir(&source).unwrap();
     let raw = source.join(std::ffi::OsString::from_vec(vec![b'a', 255]));
     let other = source.join(std::ffi::OsString::from_vec(vec![b'a', 254]));
     std::fs::write(&raw, b"first").unwrap();
     std::fs::write(other, b"second").unwrap();
-    std::fs::write(d.path().join("key"), [7; 32]).unwrap();
+    std::fs::write(root.as_path().join("key"), [7; 32]).unwrap();
     let repo = Repository::init(
-        LocalBackend::new(d.path().join("repo")).unwrap(),
+        LocalBackend::new(root.as_path().join("repo")).unwrap(),
         &Secret::KeyFile([7; 32]),
     )
     .unwrap();
@@ -62,11 +64,11 @@ fn json_paths_and_cli_filter_preserve_non_utf8_bytes() {
         command.env_remove(key);
     }
     let output = command
-        .env("HOME", d.path())
+        .env("HOME", root.as_path())
         .arg("-r")
-        .arg(d.path().join("repo"))
+        .arg(root.as_path().join("repo"))
         .arg("--key-file")
-        .arg(d.path().join("key"))
+        .arg(root.as_path().join("key"))
         .args(["ls", "latest"])
         .arg(&raw)
         .arg("--json")

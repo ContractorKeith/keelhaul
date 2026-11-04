@@ -89,7 +89,8 @@ fn compare(a: &Path, b: &Path) {
 }
 pub fn run<B: Backend>(backend: B) {
     let scratch = tempfile::tempdir().unwrap();
-    let source = scratch.path().join("source%25");
+    let root = std::fs::canonicalize(scratch.path()).unwrap();
+    let source = root.as_path().join("source%25");
     fixture(&source);
     let repo = Repository::init(backend, &Secret::KeyFile([7; 32])).unwrap();
     let first = backup(&repo, std::slice::from_ref(&source), vec!["test".into()]).unwrap();
@@ -98,7 +99,7 @@ pub fn run<B: Backend>(backend: B) {
     let second = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
     assert_eq!(second.summary.data_blobs_added, 0);
     assert_eq!(repo.backend.list(Kind::Data).unwrap().len(), packs);
-    let target = scratch.path().join("restore");
+    let target = root.as_path().join("restore");
     let report = restore(&repo, "latest", &target, &[]).unwrap();
     assert!(report.damaged.is_empty());
     let restored = target.join(source.strip_prefix("/").unwrap());
@@ -115,7 +116,7 @@ pub fn run<B: Backend>(backend: B) {
             .contains("conflict")
     );
     assert_eq!(fs::read(restored.join("small")).unwrap(), before);
-    let single = scratch.path().join("single");
+    let single = root.as_path().join("single");
     let file = source.join("nested/binary");
     restore(
         &repo,

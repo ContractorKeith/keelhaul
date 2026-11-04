@@ -7,7 +7,8 @@ use keelhaul::{
 #[test]
 fn three_hundred_directories_roundtrip_and_list() {
     let scratch = tempfile::tempdir().unwrap();
-    let source = scratch.path().join("source");
+    let root = std::fs::canonicalize(scratch.path()).unwrap();
+    let source = root.as_path().join("source");
     std::fs::create_dir(&source).unwrap();
     let mut leaf = source.clone();
     for _ in 0..300 {
@@ -18,7 +19,7 @@ fn three_hundred_directories_roundtrip_and_list() {
     std::fs::write(&leaf, b"deep bytes").unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([1; 32])).unwrap();
     backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
-    let output = scratch.path().join("out");
+    let output = root.as_path().join("out");
     let report = restore(&repo, "latest", &output, &[]).unwrap();
     assert!(report.damaged.is_empty());
     assert_eq!(
@@ -33,7 +34,7 @@ fn three_hundred_directories_roundtrip_and_list() {
 #[test]
 fn root_parent_dotdot_resolves_through_symlink_but_root_symlink_stays_a_symlink() {
     let scratch = tempfile::tempdir().unwrap();
-    let root = scratch.path();
+    let root = std::fs::canonicalize(scratch.path()).unwrap();
     std::fs::create_dir_all(root.join("actual/child")).unwrap();
     std::fs::write(root.join("actual/victim"), b"RIGHT").unwrap();
     std::fs::write(root.join("victim"), b"WRONG").unwrap();
@@ -66,20 +67,21 @@ fn root_parent_dotdot_resolves_through_symlink_but_root_symlink_stays_a_symlink(
 #[test]
 fn percent_and_literal_slash_escape_in_root_name_roundtrip_without_aliasing() {
     let scratch = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(scratch.path()).unwrap();
     let mut paths = Vec::new();
     for (name, bytes) in [
         ("a%2Fb", b"literal slash escape".as_slice()),
         ("a%b", b"literal percent".as_slice()),
         ("a%25b", b"literal percent escape".as_slice()),
     ] {
-        let root = scratch.path().join(name);
+        let root = root.as_path().join(name);
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("file"), bytes).unwrap();
         paths.push(root);
     }
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([1; 32])).unwrap();
     backup(&repo, &paths, vec![]).unwrap();
-    let target = scratch.path().join("out");
+    let target = root.as_path().join("out");
     restore(&repo, "latest", &target, &[]).unwrap();
     for path in paths {
         assert_eq!(

@@ -9,10 +9,7 @@ use crate::{
     repo::{Error, Repository, blobs::BlobStore},
 };
 use serde::Serialize;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 use walk::Walker;
 #[derive(Debug, Serialize)]
 pub struct Skipped {
@@ -25,18 +22,7 @@ pub struct Report {
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
 }
-/// Resolve parent traversal through the filesystem while preserving a symlink root.
-pub fn absolute(path: &Path) -> Result<PathBuf, Error> {
-    let joined = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    match (joined.parent(), joined.file_name()) {
-        (Some(parent), Some(name)) => Ok(fs::canonicalize(parent)?.join(name)),
-        _ => Ok(fs::canonicalize(joined)?),
-    }
-}
+pub use super::paths::normalize_root as absolute;
 pub fn backup<B: Backend>(
     repo: &Repository<B>,
     paths: &[PathBuf],
@@ -44,13 +30,18 @@ pub fn backup<B: Backend>(
 ) -> Result<Report, Error> {
     let mut paths = paths
         .iter()
-        .map(|p| absolute(p))
+        .map(|input| {
+            absolute(input).map(|normalized| {
+                let exists = std::fs::symlink_metadata(input).is_ok();
+                (normalized, input, exists)
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    paths.sort();
-    paths.dedup();
+    paths.sort_by(|a, b| a.0.cmp(&b.0).then(b.2.cmp(&a.2)));
+    paths.dedup_by(|a, b| a.0 == b.0);
     let strings = paths
         .iter()
-        .map(|p| {
+        .map(|(p, _, _)| {
             p.to_str().map(String::from).ok_or_else(|| {
                 Error::Refused(
                     "backup root paths must be UTF-8; names within them may be arbitrary bytes"
@@ -69,8 +60,10 @@ pub fn backup<B: Backend>(
         gear: repo.chunker_key(),
     };
     let mut entries = Vec::new();
-    for (path, text) in paths.iter().zip(&strings) {
-        if let Some(entry) = walker.walk(path, root_name(text).as_bytes())? {
+    for ((_, input, _), text) in paths.iter().zip(&strings) {
+        // A historical lexical fallback is a name, not permission to read a
+        // different live file when the supplied source path cannot be resolved.
+        if let Some(entry) = walker.walk(input, root_name(text).as_bytes())? {
             entries.push(entry);
         }
     }

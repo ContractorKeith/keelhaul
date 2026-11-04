@@ -15,12 +15,14 @@ fn memory_roundtrip() {
 #[test]
 fn local_roundtrip() {
     let d = tempfile::tempdir().unwrap();
-    run(LocalBackend::new(d.path()).unwrap());
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    run(LocalBackend::new(root.as_path()).unwrap());
 }
 #[test]
 fn sparse_64_mib_uses_one_repeated_chunk() {
     let d = tempfile::tempdir().unwrap();
-    let file = d.path().join("zeros");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let file = root.as_path().join("zeros");
     fs::File::create(&file)
         .unwrap()
         .set_len(64 * 1024 * 1024)
@@ -68,13 +70,14 @@ fn sparse_64_mib_uses_one_repeated_chunk() {
 #[test]
 fn skips_socket_and_missing_root_and_never_follows_input_symlink() {
     let d = tempfile::tempdir().unwrap();
-    let socket = d.path().join("socket");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let socket = root.as_path().join("socket");
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    symlink("/etc", d.path().join("link")).unwrap();
+    symlink("/etc", root.as_path().join("link")).unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([4; 32])).unwrap();
     let report = backup(
         &repo,
-        &[d.path().to_path_buf(), d.path().join("missing")],
+        &[root.as_path().to_path_buf(), root.as_path().join("missing")],
         vec![],
     )
     .unwrap();
@@ -86,14 +89,15 @@ fn skips_socket_and_missing_root_and_never_follows_input_symlink() {
 #[test]
 fn preexisting_symlink_conflict_is_refused_before_writes() {
     let d = tempfile::tempdir().unwrap();
-    let source = d.path().join("source");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let source = root.as_path().join("source");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("file"), b"secret").unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([4; 32])).unwrap();
     backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
-    let target = d.path().join("target");
+    let target = root.as_path().join("target");
     fs::create_dir(&target).unwrap();
-    let outside = d.path().join("outside");
+    let outside = root.as_path().join("outside");
     fs::create_dir(&outside).unwrap();
     let first = source
         .strip_prefix("/")
@@ -108,7 +112,7 @@ fn preexisting_symlink_conflict_is_refused_before_writes() {
         restore(
             &repo,
             "latest",
-            &d.path().join("other"),
+            &root.as_path().join("other"),
             &[PathBuf::from("../escape")]
         )
         .is_err()

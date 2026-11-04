@@ -12,12 +12,13 @@ use std::{
 #[test]
 fn existing_directory_and_disjoint_sibling_are_reused_without_metadata_changes() {
     let d = tempfile::tempdir().unwrap();
-    let source = d.path().join("source");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let source = root.as_path().join("source");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("foo"), b"content").unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([1; 32])).unwrap();
     backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
-    let target = d.path().join("out");
+    let target = root.as_path().join("out");
     let existing = target.join(source.strip_prefix("/").unwrap());
     fs::create_dir_all(&existing).unwrap();
     fs::write(existing.join("unrelated"), b"keep").unwrap();
@@ -35,7 +36,7 @@ fn existing_directory_and_disjoint_sibling_are_reused_without_metadata_changes()
     assert_eq!((before.uid(), before.gid()), (after.uid(), after.gid()));
     assert_eq!(fs::read(existing.join("unrelated")).unwrap(), b"keep");
     assert_eq!(fs::read(existing.join("foo")).unwrap(), b"content");
-    let other = d.path().join("conflict");
+    let other = root.as_path().join("conflict");
     let path = other.join(source.strip_prefix("/").unwrap());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, b"user file").unwrap();
@@ -50,7 +51,8 @@ fn existing_directory_and_disjoint_sibling_are_reused_without_metadata_changes()
 #[test]
 fn every_include_must_match_exactly_before_any_destination_is_written() {
     let d = tempfile::tempdir().unwrap();
-    let source = d.path().join("source");
+    let root = std::fs::canonicalize(d.path()).unwrap();
+    let source = root.as_path().join("source");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("foo"), b"content").unwrap();
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([1; 32])).unwrap();
@@ -60,7 +62,7 @@ fn every_include_must_match_exactly_before_any_destination_is_written() {
         vec![source.join("foo"), source.join("missing")],
         vec![PathBuf::from("fo")],
     ] {
-        let target = d.path().join("out");
+        let target = root.as_path().join("out");
         let error = restore(&repo, "latest", &target, &includes)
             .unwrap_err()
             .to_string();
@@ -68,7 +70,7 @@ fn every_include_must_match_exactly_before_any_destination_is_written() {
         assert!(error.contains(&includes.last().unwrap().display().to_string()));
         assert!(!target.exists());
     }
-    let target = d.path().join("single");
+    let target = root.as_path().join("single");
     restore(&repo, "latest", &target, &[source.join("foo")]).unwrap();
     assert_eq!(
         fs::read(target.join(source.strip_prefix("/").unwrap()).join("foo")).unwrap(),

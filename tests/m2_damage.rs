@@ -38,7 +38,8 @@ fn invalid_tree_entries_are_skipped_but_valid_neighbor_restores() {
         json!("."),
     ] {
         let d = tempfile::tempdir().unwrap();
-        let source = d.path().join("source");
+        let scratch_root = std::fs::canonicalize(d.path()).unwrap();
+        let source = scratch_root.as_path().join("source");
         std::fs::create_dir(&source).unwrap();
         std::fs::write(source.join("good"), b"correct").unwrap();
         let repo = repo();
@@ -59,23 +60,24 @@ fn invalid_tree_entries_are_skipped_but_valid_neighbor_restores() {
         store.finish().unwrap();
         root["entries"][0]["subtree"] = new.into();
         tampered_snapshot(&repo, root);
-        let target = d.path().join("out");
+        let target = scratch_root.as_path().join("out");
         let report = restore(&repo, "latest", &target, &[]).unwrap();
         assert_eq!(report.damaged.len(), 1);
         assert_eq!(
             std::fs::read(target.join(source.strip_prefix("/").unwrap()).join("good")).unwrap(),
             b"correct"
         );
-        assert!(!d.path().join("escape").exists());
+        assert!(!scratch_root.as_path().join("escape").exists());
     }
 }
 #[test]
 fn damaged_blob_has_no_final_or_temp_file_and_neighbor_survives() {
     let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join("bad"), b"bad content").unwrap();
-    std::fs::write(d.path().join("good"), b"good content").unwrap();
+    let scratch_root = std::fs::canonicalize(d.path()).unwrap();
+    std::fs::write(scratch_root.as_path().join("bad"), b"bad content").unwrap();
+    std::fs::write(scratch_root.as_path().join("good"), b"good content").unwrap();
     let repo = repo();
-    backup(&repo, &[d.path().to_path_buf()], vec![]).unwrap();
+    backup(&repo, &[scratch_root.as_path().to_path_buf()], vec![]).unwrap();
     let store = BlobStore::load(&repo).unwrap();
     let loc = store
         .index
@@ -89,7 +91,9 @@ fn damaged_blob_has_no_final_or_temp_file_and_neighbor_survives() {
     let target = tempfile::tempdir().unwrap();
     let report = restore(&repo, "latest", target.path(), &[]).unwrap();
     assert_eq!(report.damaged.len(), 1);
-    let restored = target.path().join(d.path().strip_prefix("/").unwrap());
+    let restored = target
+        .path()
+        .join(scratch_root.as_path().strip_prefix("/").unwrap());
     assert!(!restored.join("bad").exists());
     assert_eq!(
         std::fs::read(restored.join("good")).unwrap(),
@@ -153,7 +157,8 @@ fn missing_snapshot_and_bad_index_are_damage() {
 fn unreadable_tree_skips_subtree_and_missing_blob_skips_only_affected_file() {
     for missing_tree in [true, false] {
         let d = tempfile::tempdir().unwrap();
-        let source = d.path().join("source");
+        let scratch_root = std::fs::canonicalize(d.path()).unwrap();
+        let source = scratch_root.as_path().join("source");
         std::fs::create_dir(&source).unwrap();
         std::fs::write(source.join("file"), b"data").unwrap();
         let repo = repo();
@@ -176,7 +181,7 @@ fn unreadable_tree_skips_subtree_and_missing_blob_skips_only_affected_file() {
             root["entries"][0]["subtree"] = id.into();
         }
         tampered_snapshot(&repo, root);
-        let target = d.path().join("out");
+        let target = scratch_root.as_path().join("out");
         let report = restore(&repo, "latest", &target, &[]).unwrap();
         assert_eq!(report.damaged.len(), 1);
         let restored = target.join(source.strip_prefix("/").unwrap());
