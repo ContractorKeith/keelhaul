@@ -156,8 +156,13 @@ fn unreadable_snapshot_or_tree_aborts_without_deleting_packs_or_indexes() {
 #[test]
 fn forget_prune_frees_space_and_kept_snapshot_restores() {
     let scratch = tempfile::tempdir().unwrap();
-    let source = scratch.path().join("source");
+    let real = std::fs::canonicalize(scratch.path()).unwrap();
+    let alias = real.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let source = alias.join("source");
     std::fs::create_dir(&source).unwrap();
+    let stored_source = std::fs::canonicalize(&source).unwrap();
+    assert_ne!(source, stored_source, "fixture must exercise a path alias");
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([13; 32])).unwrap();
     let mut bytes = vec![0; 600_000];
     blake3::Hasher::new().finalize_xof().fill(&mut bytes);
@@ -189,7 +194,12 @@ fn forget_prune_frees_space_and_kept_snapshot_restores() {
     let target = scratch.path().join("restore");
     restore(&repo, &kept.snapshot, &target, &[]).unwrap();
     assert_eq!(
-        std::fs::read(target.join(source.strip_prefix("/").unwrap()).join("kept")).unwrap(),
+        std::fs::read(
+            target
+                .join(stored_source.strip_prefix("/").unwrap())
+                .join("kept")
+        )
+        .unwrap(),
         b"keep me"
     );
 }

@@ -68,7 +68,10 @@ impl Clock for Fake {
 #[test]
 fn stale_backup_blocks_prune_and_unlock_prune_is_caught_at_publication() {
     let scratch = tempfile::tempdir().unwrap();
-    let file = scratch.path().join("source");
+    let real = std::fs::canonicalize(scratch.path()).unwrap();
+    let alias = real.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let file = alias.join("source");
     std::fs::write(&file, b"irreplaceable snapshot bytes").unwrap();
     let repo = Arc::new(
         Repository::init(
@@ -140,13 +143,15 @@ fn stale_backup_blocks_prune_and_unlock_prune_is_caught_at_publication() {
     );
     assert!(repo.backend.list(Kind::Snapshots).unwrap().is_empty());
     assert!(check(&repo).unwrap().damage.is_empty());
-    let source = scratch.path().join("source");
+    let source = alias.join("source");
+    let stored_source = std::fs::canonicalize(&source).unwrap();
+    assert_ne!(source, stored_source, "fixture must exercise a path alias");
     let report =
         keelhaul::ops::backup::backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
     let target = scratch.path().join("restored");
     keelhaul::ops::restore::restore(&repo, &report.snapshot, &target, &[]).unwrap();
     assert_eq!(
-        std::fs::read(target.join(source.strip_prefix("/").unwrap())).unwrap(),
+        std::fs::read(target.join(stored_source.strip_prefix("/").unwrap())).unwrap(),
         b"irreplaceable snapshot bytes"
     );
 }
