@@ -1,5 +1,5 @@
 use super::{
-    pipeline::{Event, Status, closed, send},
+    pipeline::{Event, Status, send},
     walk::FileTask,
 };
 use crate::{
@@ -64,7 +64,7 @@ pub(super) fn read(
         let id = blake3::keyed_hash(&keys.0, bytes).to_hex().to_string();
         let fresh = seen
             .lock()
-            .map_err(|_| closed())?
+            .map_err(|_| Error::Refused("chunk reservation mutex poisoned".into()))?
             .insert((BlobKind::Data, id.clone()));
         if fresh {
             let stored = envelope::seal(&keys.1, BlobKind::Data.label(), bytes)?;

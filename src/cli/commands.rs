@@ -14,7 +14,14 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             let backend = super::repo::select(&path, initializing, cli.verbose > 0)?;
             #[cfg(feature = "fault-injection")]
             let backend: Box<dyn crate::backend::Backend> =
-                Box::new(crate::backend::fault::FaultBackend::from_env(backend)?);
+                Box::new(crate::backend::fault::FaultBackend::from_env(
+                    backend,
+                    if path.starts_with("s3:") || path.starts_with("sftp:") {
+                        None
+                    } else {
+                        Some(std::path::PathBuf::from(&path))
+                    },
+                )?);
             let load = if initializing {
                 secret::load_for_init
             } else {

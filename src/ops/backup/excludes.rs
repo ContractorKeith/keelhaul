@@ -13,6 +13,11 @@ impl Patterns {
     pub fn new(patterns: &[String]) -> Result<Self, Error> {
         let mut rules = Vec::new();
         for raw in patterns {
+            let normalized = gitignore_pattern(raw);
+            if normalized.is_empty() {
+                continue;
+            }
+            let raw = &normalized;
             let (include, text) = raw
                 .strip_prefix('!')
                 .map_or((false, raw.as_str()), |p| (true, p));
@@ -54,4 +59,30 @@ impl Patterns {
         }
         excluded
     }
+}
+
+// Gitignore treats braces literally and discards only unescaped trailing spaces.
+fn gitignore_pattern(raw: &str) -> String {
+    let mut end = raw.len();
+    while raw.as_bytes().get(end.wrapping_sub(1)) == Some(&b' ') {
+        let slashes = raw.as_bytes()[..end - 1]
+            .iter()
+            .rev()
+            .take_while(|b| **b == b'\\')
+            .count();
+        if slashes % 2 == 1 {
+            break;
+        }
+        end -= 1;
+    }
+    let mut result = String::new();
+    let mut escaped = false;
+    for c in raw[..end].chars() {
+        if !escaped && matches!(c, '{' | '}') {
+            result.push('\\');
+        }
+        result.push(c);
+        escaped = !escaped && c == '\\';
+    }
+    result
 }

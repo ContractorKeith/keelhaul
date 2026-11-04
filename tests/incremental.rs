@@ -85,9 +85,9 @@ fn parent_host_paths_override_and_damaged_tree_fallback() {
         .unwrap();
     let mut explicit = options(4);
     explicit.parent = Some(first.snapshot.clone());
-    assert_eq!(run(&repo, scratch.path(), explicit).summary.files_read, 1);
     // Exercise the CLI warning contract against an opaque copy of this damaged repo.
-    let local_path = scratch.path().join("damaged-repo");
+    let copy_scratch = tempfile::tempdir().unwrap();
+    let local_path = copy_scratch.path().join("damaged-repo");
     let local = keelhaul::backend::local::LocalBackend::new(&local_path).unwrap();
     for kind in Kind::ALL {
         for entry in repo.backend.list(kind).unwrap() {
@@ -96,6 +96,16 @@ fn parent_host_paths_override_and_damaged_tree_fallback() {
                 .unwrap();
         }
     }
+    let recovered = run(&repo, scratch.path(), explicit);
+    assert_eq!(recovered.summary.files_read, 1);
+    assert_eq!(recovered.summary.data_blobs_added, 1);
+    assert!(
+        repo.select_snapshot(&recovered.snapshot)
+            .unwrap()
+            .1
+            .parent
+            .is_none()
+    );
     let key = scratch.path().join("key");
     fs::write(&key, [8; 32]).unwrap();
     // Keep the backed-up root distinct from the copied repository and secret.
@@ -170,6 +180,13 @@ fn excludes_golden_and_cli_exclude_file_comments() {
         "directory",
         "nested/other",
         "nested/root.txt",
+        "{a,b}",
+        "a",
+        "b",
+        "trim",
+        "trim ",
+        "keep",
+        "keep ",
     ] {
         fs::write(root.join(file), b"x").unwrap();
     }
@@ -178,7 +195,7 @@ fn excludes_golden_and_cli_exclude_file_comments() {
     let exclude_file = scratch.path().join("excludes");
     fs::write(
         &exclude_file,
-        "# comment\n\n*.tmp\n!keep.tmp\ncache/\n/sub/root.txt\ndirectory/\n",
+        "# comment\n\n*.tmp\n!keep.tmp\ncache/\n/sub/root.txt\ndirectory/\n{a,b}\ntrim   \nkeep\\ \n",
     )
     .unwrap();
     let cli = |args: &[&str]| {
@@ -220,7 +237,10 @@ fn excludes_golden_and_cli_exclude_file_comments() {
             "!keep.tmp",
             "cache/",
             "/sub/root.txt",
-            "directory/"
+            "directory/",
+            "{a,b}",
+            "trim   ",
+            "keep\\ "
         ]
     );
     let output = scratch.path().join("out");
@@ -238,6 +258,10 @@ fn excludes_golden_and_cli_exclude_file_comments() {
         "directory",
         "nested/other",
         "nested/root.txt",
+        "a",
+        "b",
+        "trim ",
+        "keep",
     ] {
         assert!(restored.join(file).is_file(), "missing {file}");
     }
@@ -247,9 +271,26 @@ fn excludes_golden_and_cli_exclude_file_comments() {
         "cache",
         "nested/cache",
         "sub/root.txt",
+        "{a,b}",
+        "trim",
+        "keep ",
     ] {
         assert!(!restored.join(file).exists(), "excluded {file}");
     }
+    // `git check-ignore --no-index` agrees: {a,b} is literal, trailing
+    // spaces are trimmed, and `keep\ ` matches a name with one final space.
+    let result = cli(&[
+        "backup",
+        root.join("a.tmp").to_str().unwrap(),
+        "--exclude",
+        "*.tmp",
+        "--json",
+    ]);
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("excluded by pattern"));
+    assert_eq!(repo.snapshots().unwrap().len(), 1);
 }
 #[path = "common/incremental_edges.rs"]
 mod edges;
+#[path = "common/exclude_review.rs"]
+mod exclude_review;

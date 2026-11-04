@@ -1,4 +1,5 @@
 //! Pack assembler and durable index flushes.
+mod parent;
 mod writer;
 pub use writer::{SealedBlob, Upload};
 mod reader;
@@ -25,6 +26,8 @@ pub struct BlobStore<'a, B> {
     repo: &'a Repository<B>,
     uploads: Option<writer::Uploads>,
     pub index: HashMap<(BlobKind, String), Location>,
+    pub(crate) suspect: HashSet<(BlobKind, String)>,
+    parent_checked: HashSet<String>,
     pending: Vec<u8>,
     blobs: Vec<Blob>,
     pending_ids: HashSet<(BlobKind, String)>,
@@ -79,6 +82,8 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             repo,
             uploads: None,
             index,
+            suspect: HashSet::new(),
+            parent_checked: HashSet::new(),
             pending: Vec::new(),
             blobs: Vec::new(),
             pending_ids: HashSet::new(),
@@ -132,6 +137,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             blob.offset = 0;
         }
         self.header_bytes += descriptor_bytes;
+        self.suspect.remove(&(kind, id.clone()));
         self.pending_ids.insert((kind, id));
         if kind == BlobKind::Data {
             self.data_blobs_added += 1;
@@ -210,6 +216,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             uploads.wait()?;
         }
         if self.packs.is_empty() {
+            self.index_bytes = 0;
             self.flushed = Instant::now();
             return Ok(());
         }
@@ -243,7 +250,9 @@ mod tests {
         let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
         let mut store = BlobStore::load(&repo).unwrap();
         store.flushed = Instant::now() - Duration::from_secs(301);
+        store.index_bytes = 17;
         store.flush_index().unwrap();
+        assert_eq!(store.index_bytes, 0);
         store.add(BlobKind::Data, b"new data").unwrap();
         assert!(repo.backend.list(Kind::Data).unwrap().is_empty());
         assert!(store.flushed.elapsed() < Duration::from_secs(1));

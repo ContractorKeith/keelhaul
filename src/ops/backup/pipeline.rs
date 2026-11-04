@@ -1,5 +1,5 @@
 //! Bounded walker → file workers → assembler → upload workers.
-use super::{Options, Patterns, Skipped, files, parent::Previous, trees::Trees, walk};
+use super::{Options, Patterns, Skipped, files, parent::Previous, trees::Trees, walk, workers};
 use crate::{
     backend::Backend,
     format::{
@@ -34,6 +34,7 @@ pub(super) enum Event {
     Ignored((usize, PathBuf)),
     Warning(PathBuf, String),
     Read,
+    Finished(bool),
 }
 pub(super) fn closed() -> Error {
     Error::Refused("backup pipeline stopped".into())
@@ -58,7 +59,14 @@ pub(super) fn run<B: Backend>(
     options: &Options,
 ) -> Result<Output, Error> {
     let jobs = options.jobs;
-    let seen = Mutex::new(store.index.keys().cloned().collect());
+    let seen = Mutex::new(
+        store
+            .index
+            .keys()
+            .filter(|id| !store.suspect.contains(*id))
+            .cloned()
+            .collect(),
+    );
     let keys = store.worker_keys();
     let gear = repo.chunker_key();
     thread::scope(|scope| {
@@ -74,40 +82,27 @@ pub(super) fn run<B: Backend>(
         for _ in 0..jobs {
             let receiver = uploads_rx.clone();
             let done = done_tx.clone();
+            let errors = events_tx.clone();
             thread::Builder::new().spawn_scoped(scope, move || {
-                loop {
-                    let task = match receiver.lock() {
-                        Ok(rx) => rx.recv(),
-                        Err(_) => return,
-                    };
-                    let Ok(task) = task else {
-                        break;
-                    };
-                    if done
-                        .send(repo.backend.write(&task.name, &task.bytes))
-                        .is_err()
-                    {
-                        break;
+                workers::run("upload", errors, move || {
+                    while let Some(task) = workers::receive(&receiver, "upload")? {
+                        if done.send(workers::upload(repo, &task)).is_err() {
+                            break;
+                        }
                     }
-                }
+                    Ok(())
+                });
             })?;
             let receiver = tasks_rx.clone();
             let events = events_tx.clone();
             let seen = &seen;
             thread::Builder::new().spawn_scoped(scope, move || {
-                loop {
-                    let task = match receiver.lock() {
-                        Ok(rx) => rx.recv(),
-                        Err(_) => return,
-                    };
-                    let Ok(task) = task else {
-                        break;
-                    };
-                    if let Err(e) = files::read(task, &gear, &keys, seen, &events) {
-                        let _ = events.send(Err(e));
-                        break;
+                workers::run("file", events.clone(), move || {
+                    while let Some(task) = workers::receive(&receiver, "file")? {
+                        files::read(task, &gear, &keys, seen, &events)?;
                     }
-                }
+                    Ok(())
+                });
             })?;
         }
         drop(done_tx);
@@ -115,17 +110,17 @@ pub(super) fn run<B: Backend>(
         drop(uploads_rx);
         let walker_events = events_tx.clone();
         thread::Builder::new().spawn_scoped(scope, move || {
-            if let Err(e) = walk::run(
-                roots,
-                strings,
-                &previous,
-                patterns,
-                options,
-                tasks_tx,
-                walker_events.clone(),
-            ) {
-                let _ = walker_events.send(Err(e));
-            }
+            workers::run("walker", walker_events.clone(), move || {
+                walk::run(
+                    roots,
+                    strings,
+                    &previous,
+                    patterns,
+                    options,
+                    tasks_tx,
+                    walker_events,
+                )
+            });
         })?;
         drop(events_tx);
         // An early return drops the receivers and store's upload sender, which
@@ -134,8 +129,13 @@ pub(super) fn run<B: Backend>(
         let mut skipped = Vec::new();
         let mut files_read = 0;
         let mut trees = Trees::new(roots);
-        for event in events_rx {
-            match event? {
+        let mut unfinished = jobs + 1;
+        while unfinished > 0 {
+            match events_rx.recv().map_err(|_| closed())?? {
+                Event::Finished(false) => unfinished -= 1,
+                Event::Finished(true) => {
+                    return Err(Error::Refused("upload pool stopped early".into()));
+                }
                 Event::Blob(blob) => store.add_sealed(blob)?,
                 Event::Read => files_read += 1,
                 Event::Directory(key, entry, count) => {
@@ -172,6 +172,12 @@ pub(super) fn run<B: Backend>(
         summary.bytes_added = store.bytes_added;
         // The sender must be dropped inside the scope, before it joins uploads.
         drop(store);
+        for _ in 0..jobs {
+            match events_rx.recv().map_err(|_| closed())?? {
+                Event::Finished(true) => {}
+                _ => return Err(closed()),
+            }
+        }
         Ok(Output {
             tree,
             paths,

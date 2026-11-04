@@ -36,7 +36,7 @@ pub(super) fn load<B: Backend>(
         Ok(previous) => Ok((Some(id), previous)),
         Err(error) => {
             eprintln!("warning: parent {id} unavailable; reading all files: {error}");
-            Ok((Some(id), HashMap::new()))
+            Ok((None, HashMap::new()))
         }
     }
 }
@@ -47,8 +47,11 @@ fn read<B: Backend>(store: &mut BlobStore<'_, B>, root: &str) -> Result<Previous
         if !ancestors.insert(id.clone()) {
             return Err(Error::Refused("parent tree cycle".into()));
         }
-        let tree = Tree::parse(&store.read(BlobKind::Tree, &id)?)
-            .map_err(|e| Error::Refused(e.to_string()))?;
+        let bytes = store.read_parent_tree(&id)?;
+        let tree = Tree::parse(&bytes).map_err(|e| {
+            store.suspect_blob(BlobKind::Tree, &id);
+            Error::Refused(e.to_string())
+        })?;
         for entry in tree.entries {
             let name = entry
                 .name_bytes()

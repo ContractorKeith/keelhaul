@@ -18,9 +18,12 @@ pub(super) struct Uploads {
 }
 impl Uploads {
     pub fn send(&mut self, upload: Upload) -> Result<(), Error> {
-        self.sender
-            .send(upload)
-            .map_err(|_| Error::Refused("upload pool stopped".into()))?;
+        self.sender.send(upload).map_err(|error| {
+            Error::Refused(format!(
+                "upload pool stopped while sending {}",
+                error.0.name
+            ))
+        })?;
         self.outstanding += 1;
         Ok(())
     }

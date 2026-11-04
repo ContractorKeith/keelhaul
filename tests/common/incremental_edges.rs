@@ -64,7 +64,7 @@ fn one_file_system_prunes_a_different_device_but_allows_it_as_its_own_root() {
     policy.one_file_system = true;
     assert_eq!(run(&repo, Path::new("/"), policy).summary.dirs, 1);
     let mut policy = options(1);
-    policy.excludes = vec!["*".into()];
+    policy.excludes = vec!["*".into(), "!/dev".into()];
     policy.one_file_system = true;
     assert_eq!(run(&repo, Path::new("/dev"), policy).summary.dirs, 1);
 }

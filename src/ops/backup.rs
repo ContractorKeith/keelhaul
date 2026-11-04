@@ -6,6 +6,7 @@ mod pipeline;
 mod tests;
 mod trees;
 mod walk;
+mod workers;
 use crate::{
     backend::Backend,
     crypto::envelope::Label,
@@ -90,12 +91,13 @@ pub fn backup_with_options<B: Backend>(
     options: &Options,
 ) -> Result<Report, Error> {
     // M5: shared lock
-    if options.jobs == 0 {
-        return Err(Error::Refused("jobs must be positive".into()));
+    if !(1..=256).contains(&options.jobs) {
+        return Err(Error::Refused("jobs must be between 1 and 256".into()));
     }
     if paths.is_empty() {
         return Err(Error::Refused("backup needs at least one path".into()));
     }
+    let patterns = Patterns::new(&options.excludes)?;
     let mut failures = Vec::new();
     let mut roots = Vec::new();
     for input in paths {
@@ -106,8 +108,16 @@ pub fn backup_with_options<B: Backend>(
                 continue;
             }
         };
-        if let Err(error) = std::fs::symlink_metadata(input) {
-            failures.push(skipped(input, error));
+        let meta = match std::fs::symlink_metadata(input) {
+            Ok(meta) => meta,
+            Err(error) => {
+                failures.push(skipped(input, error));
+                continue;
+            }
+        };
+        let candidate = normalized.file_name().map(Path::new).unwrap_or(&normalized);
+        if patterns.excluded(candidate, meta.is_dir()) {
+            failures.push(skipped(input, "excluded by pattern"));
             continue;
         }
         roots.push((normalized, input));
@@ -133,7 +143,6 @@ pub fn backup_with_options<B: Backend>(
     let host = options.host.clone().unwrap_or_else(crate::host::hostname);
     let mut store = BlobStore::load(repo)?;
     let (parent, previous) = parent::load(repo, &mut store, &host, &strings, options)?;
-    let patterns = Patterns::new(&options.excludes)?;
     let result = pipeline::run(repo, store, &roots, &strings, previous, &patterns, options)?;
     let mut summary = result.summary;
     summary.files_skipped += failures.len() as u64;
