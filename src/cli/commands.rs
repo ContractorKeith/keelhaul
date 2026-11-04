@@ -11,7 +11,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 .repo
                 .ok_or_else(|| anyhow::anyhow!("--repo is required"))?;
             let initializing = matches!(command, Command::Init);
-            let backend = super::repo::select(&path, initializing)?;
+            let backend = super::repo::select(&path, initializing, cli.verbose > 0)?;
             let load = if initializing {
                 secret::load_for_init
             } else {

@@ -25,7 +25,7 @@ pub fn run_suite(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn(&str,
     let missing = name(&format!("data/ff/{}", "ff".repeat(32)));
     assert!(matches!(b.read(&missing), Err(BackendError::NotFound(_))));
     assert!(matches!(
-        b.read_range(&missing, 0, 0),
+        b.read_range(&missing, 0, 1),
         Err(BackendError::NotFound(_))
     ));
     assert!(matches!(b.stat(&missing), Err(BackendError::NotFound(_))));

@@ -22,6 +22,12 @@ pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
     let mut current = Some(error);
     while let Some(cause) = current {
         if matches!(
+            cause.downcast_ref::<crate::backend::BackendError>(),
+            Some(crate::backend::BackendError::InvalidConfig(_))
+        ) {
+            return Failure::Usage;
+        }
+        if matches!(
             cause.downcast_ref::<crate::secret::Error>(),
             Some(
                 crate::secret::Error::ConflictingSources

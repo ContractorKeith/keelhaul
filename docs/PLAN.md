@@ -56,7 +56,7 @@ completes.
 | 15 | Locks (shared/exclusive, refresh, stale, self-check), `unlock` | v1 | M5 | SPEC §11 |
 | 16 | `forget` with retention policy, `--dry-run`, `--prune` | v1 | M5 | grouped by host + paths |
 | 17 | `prune` with repack, SIGKILL loop for prune | v1 | M5 | SPEC §14 |
-| 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials |
+| 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials; create-once is exact only on servers with conditional PUT; otherwise concurrent `init` of one repo is unsafe |
 | 19 | SFTP backend over system `ssh -s sftp`, own SFTP v3 client, sshd e2e | v1 | M7 | honours `~/.ssh/config` |
 | 20 | `--json` on every command, exit codes 0/1/2/3/4 | v1 | M0–M5 | each milestone for its commands |
 | 21 | Release binaries (linux x64/arm64, macOS arm64), Homebrew formula, crates.io | v1 | M8 | |
@@ -158,7 +158,11 @@ keelhaul version
 `<snap>` is a unique ID prefix or `latest` (newest for this host and paths).
 
 Global flags: `-r/--repo` (or `KEELHAUL_REPO`): a path, `sftp:[user@]host:/path`, or
-`s3:https://endpoint/bucket[/prefix]`. Secrets come from one of `--password-file` /
+`s3:https://endpoint/bucket[/prefix]`. For S3, the endpoint is scheme plus authority:
+the first path segment is always the bucket (3–63 lowercase letters, digits, dots or
+hyphens), followed by the optional repository prefix. Endpoint path prefixes are not
+supported; `s3:https://host/s3/bucket/p` selects bucket `s3` and is rejected because its
+name is too short, rather than routing through an endpoint path `/s3`. Secrets come from one of `--password-file` /
 `KEELHAUL_PASSWORD_FILE`, `--password-command` / `KEELHAUL_PASSWORD_COMMAND`, `--key-file` /
 `KEELHAUL_KEY_FILE`, or a TTY prompt. Never from argv. S3 credentials come from
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`. Other flags:
