@@ -49,7 +49,7 @@ An encrypted object recording one backup run: time, host, paths, tags and the ro
 _Avoid_: backup, archive, version, generation
 
 **Lock**:
-An object in the repository saying which host and process is using it, shared or exclusive, refreshed while held. Stale after 30 minutes without refresh.
+An object in the repository saying which host and process is using it, shared or exclusive, refreshed while held. Stale after 30 minutes without refresh; dead when its process is gone on this host. Only dead locks are ignored; stale ones wait for `unlock`.
 _Avoid_: lease, mutex, lockfile
 
 **Parent snapshot**:
