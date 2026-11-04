@@ -99,6 +99,7 @@ fn replace_pack(f: &Fixture, old: &ObjectName, bytes: &[u8], index: &str) -> (St
     (name.to_string(), format!("index/{new_index}"))
 }
 pub fn run_cases(f: &Fixture, seed: u64) {
+    duplicate_case(f, seed);
     // Change the complete valid descriptor list, re-seal it, and rename the pack.
     // Matching body permutation keeps the stored blobs valid; only the index lies.
     f.reset();
@@ -166,4 +167,73 @@ pub fn run_cases(f: &Fixture, seed: u64) {
     v.insert(signature(a.as_str(), "pack", "hash-mismatch"));
     v.insert(signature(b.as_str(), "pack", "hash-mismatch"));
     run(f, seed, "swap two whole packs' contents", c, v);
+}
+
+/// A stored location may be damaged while its logical chunk remains restorable.
+/// The oracle retains physical pack/blob damage and adds referring files only
+/// after both independently sealed, indexed copies fail authentication.
+fn duplicate_case(f: &Fixture, seed: u64) {
+    f.reset();
+    let mut store = BlobStore::load(&f.repo).unwrap();
+    let loc = store.index[&(BlobKind::Data, f.data.2.clone())].clone();
+    let payload = store.read(BlobKind::Data, &loc.blob.id).unwrap();
+    let mut blob = loc.blob.clone();
+    blob.offset = 0;
+    let mut stored = envelope::seal(&keys(f).encryption, Label::Data, &payload).unwrap();
+    assert_eq!(stored.len() as u64, blob.length);
+    let header = envelope::seal(
+        &keys(f).encryption,
+        Label::PackHeader,
+        &serde_json::to_vec(&Header {
+            version: 1,
+            blobs: vec![blob.clone()],
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    stored.extend(&header);
+    stored.extend((header.len() as u32).to_le_bytes());
+    let id = blake3::hash(&stored).to_hex().to_string();
+    let copy = pack_name(&id).unwrap();
+    f.repo.backend.write(&copy, &stored).unwrap();
+    f.repo
+        .write_object(
+            "index",
+            Label::Index,
+            &serde_json::to_vec(&Index {
+                version: 1,
+                supersedes: vec![],
+                packs: vec![keelhaul::format::index::Pack {
+                    id,
+                    blobs: vec![blob],
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+    let mut original = f.bytes(&f.data.0);
+    original[f.data.1 as usize + 24] ^= 1;
+    f.plant(&f.data.0, &original);
+    let mut v = expected([
+        signature(&f.data.0, "pack", "hash-mismatch"),
+        signature(&f.data.2, "blob", "undecryptable"),
+    ]);
+    run(
+        f,
+        seed,
+        "bad data location plus healthy indexed duplicate; no damaged files",
+        Expected::new(),
+        v.clone(),
+    );
+    stored[24] ^= 1;
+    f.plant(copy.as_str(), &stored);
+    v.insert(signature(copy.as_str(), "pack", "hash-mismatch"));
+    v.extend(file_errors(f, &f.data.2));
+    run(
+        f,
+        seed,
+        "both indexed copies fail; every referring file is damaged",
+        Expected::new(),
+        v,
+    );
 }

@@ -22,3 +22,17 @@ equal-length authenticated envelope swap makes keyed-ID validation independently
 observable. Pack hashes and missing packs have their own expected signatures.
 
 Original sources restored: yes. Unmodified baseline: PASS.
+
+## Duplicate-copy addendum
+
+The seeded harness also creates a freshly sealed, indexed duplicate of a referenced
+data blob. With the original location corrupted, the exact expected set retains its
+pack/hash-mismatch and blob/undecryptable entries and excludes every referring file.
+Once both locations are corrupted, all referring snapshot/path file entries appear.
+
+`tests/verify_duplicate_cli.rs` forces the original location to be preferred. Verify
+exits 3 with exactly the damaged pack/blob entries; restore succeeds with correct bytes
+and does not rewrite the repository. Corrupting the second copy produces file damage.
+The verify-only CLI regression also passed with the single-copy reader from c5d7a7c
+temporarily substituted, proving verify does not depend on the general reader fallback.
+The original reader was restored byte-for-byte, then both CLI regressions passed.
