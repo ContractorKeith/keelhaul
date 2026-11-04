@@ -232,7 +232,11 @@ An index object is an envelope (label `keelhaul/index`) whose payload is:
 
 The live index is the union of every index object, minus every object named in a
 `supersedes` list. Entries for a pack must equal that pack's header. If one blob appears in
-more than one pack, any copy may be read; `prune` removes duplicates. The index is a
+more than one pack, any copy may be read; a reader whose copy fails verification MUST try
+the others before reporting the blob as damaged. A writer that finds a stored blob damaged
+(for example while reading a parent snapshot) MUST NOT deduplicate against it; it stores a
+fresh copy, which is how a later backup heals a damaged blob. `prune` keeps one verified
+copy and removes the rest. The index is a
 cache of pack headers: it can always be rebuilt by reading every pack header, and
 `check` treats a mismatch between the two as damage of the index object.
 
