@@ -44,7 +44,8 @@ pub struct Cli {
     quiet: bool,
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
-    #[arg(long, default_value_t = 4, global = true, value_parser = clap::value_parser!(u32).range(1..))]
+    /// Workers (1–256). Memory: jobs × (8 MiB + 2 × pack_target), plus index and tree metadata.
+    #[arg(long, default_value_t = 4, global = true, value_parser = clap::value_parser!(u32).range(1..=256))]
     jobs: u32,
     #[command(subcommand)]
     command: Command,
@@ -63,6 +64,18 @@ pub(super) enum Command {
         paths: Vec<PathBuf>,
         #[arg(long)]
         tag: Vec<String>,
+        #[arg(long)]
+        host: Option<String>,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        force_rehash: bool,
+        #[arg(long)]
+        exclude: Vec<String>,
+        #[arg(long)]
+        exclude_file: Option<PathBuf>,
+        #[arg(long)]
+        one_file_system: bool,
     },
     Snapshots {
         #[arg(long)]

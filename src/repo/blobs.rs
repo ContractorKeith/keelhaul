@@ -1,4 +1,7 @@
-//! Single-threaded blob sink; M4 can parallelize compression behind `add`.
+//! Pack assembler and durable index flushes.
+mod parent;
+mod writer;
+pub use writer::{SealedBlob, Upload};
 mod reader;
 use super::{Error, Repository, objects::missing, open::damage};
 use crate::{
@@ -21,7 +24,10 @@ pub struct Location {
 }
 pub struct BlobStore<'a, B> {
     repo: &'a Repository<B>,
+    uploads: Option<writer::Uploads>,
     pub index: HashMap<(BlobKind, String), Location>,
+    pub(crate) suspect: HashSet<(BlobKind, String)>,
+    parent_checked: HashSet<String>,
     pending: Vec<u8>,
     blobs: Vec<Blob>,
     pending_ids: HashSet<(BlobKind, String)>,
@@ -74,7 +80,10 @@ impl<'a, B: Backend> BlobStore<'a, B> {
         }
         Ok(Self {
             repo,
+            uploads: None,
             index,
+            suspect: HashSet::new(),
+            parent_checked: HashSet::new(),
             pending: Vec::new(),
             blobs: Vec::new(),
             pending_ids: HashSet::new(),
@@ -99,12 +108,27 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             return Ok(id);
         }
         let stored = envelope::seal(&keys.encryption, kind.label(), payload)?;
+        self.add_sealed(SealedBlob {
+            id: id.clone(),
+            kind,
+            stored,
+            raw_length: payload.len() as u64,
+        })?;
+        Ok(id)
+    }
+    pub fn add_sealed(&mut self, sealed: SealedBlob) -> Result<(), Error> {
+        let SealedBlob {
+            id,
+            kind,
+            stored,
+            raw_length,
+        } = sealed;
         let mut blob = Blob {
             id: id.clone(),
             kind,
             offset: self.pending.len() as u64,
             length: stored.len() as u64,
-            raw_length: payload.len() as u64,
+            raw_length,
         };
         let descriptor_bytes = serde_json::to_vec(&blob)?.len() as u64 + 1;
         // The raw header bounds the sealed header too, since seal only shrinks it.
@@ -113,7 +137,8 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             blob.offset = 0;
         }
         self.header_bytes += descriptor_bytes;
-        self.pending_ids.insert((kind, id.clone()));
+        self.suspect.remove(&(kind, id.clone()));
+        self.pending_ids.insert((kind, id));
         if kind == BlobKind::Data {
             self.data_blobs_added += 1;
         }
@@ -127,7 +152,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             self.close_pack()?;
             self.flush_index()?;
         }
-        Ok(id)
+        Ok(())
     }
     fn close_pack(&mut self) -> Result<(), Error> {
         if self.blobs.is_empty() {
@@ -148,8 +173,15 @@ impl<'a, B: Backend> BlobStore<'a, B> {
         self.pending.extend(&sealed);
         self.pending.extend((sealed.len() as u32).to_le_bytes());
         let id = blake3::hash(&self.pending).to_hex().to_string();
-        self.repo.backend.write(&pack_name(&id)?, &self.pending)?;
-        self.pending = Vec::new();
+        let bytes = std::mem::take(&mut self.pending);
+        if let Some(uploads) = &mut self.uploads {
+            uploads.send(Upload {
+                name: pack_name(&id)?,
+                bytes,
+            })?;
+        } else {
+            self.repo.backend.write(&pack_name(&id)?, &bytes)?;
+        }
         for blob in &header.blobs {
             self.index.insert(
                 (blob.kind, blob.id.clone()),
@@ -180,7 +212,11 @@ impl<'a, B: Backend> BlobStore<'a, B> {
         Ok(())
     }
     fn flush_index(&mut self) -> Result<(), Error> {
+        if let Some(uploads) = &mut self.uploads {
+            uploads.wait()?;
+        }
         if self.packs.is_empty() {
+            self.index_bytes = 0;
             self.flushed = Instant::now();
             return Ok(());
         }
@@ -214,7 +250,9 @@ mod tests {
         let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
         let mut store = BlobStore::load(&repo).unwrap();
         store.flushed = Instant::now() - Duration::from_secs(301);
+        store.index_bytes = 17;
         store.flush_index().unwrap();
+        assert_eq!(store.index_bytes, 0);
         store.add(BlobKind::Data, b"new data").unwrap();
         assert!(repo.backend.list(Kind::Data).unwrap().is_empty());
         assert!(store.flushed.elapsed() < Duration::from_secs(1));

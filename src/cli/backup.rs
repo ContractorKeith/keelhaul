@@ -5,10 +5,35 @@ pub(super) fn run<B: Backend>(
     repo: &Repository<B>,
     command: Command,
     json: bool,
+    jobs: usize,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Backup { paths, tag } => {
-            let report = ops::backup::backup(repo, &paths, tag)?;
+        Command::Backup {
+            paths,
+            tag,
+            host,
+            parent,
+            force_rehash,
+            mut exclude,
+            exclude_file,
+            one_file_system,
+        } => {
+            if let Some(file) = exclude_file {
+                for line in std::fs::read_to_string(file)?.lines() {
+                    if !line.trim().is_empty() && !line.starts_with('#') {
+                        exclude.push(line.to_string());
+                    }
+                }
+            }
+            let options = ops::backup::Options {
+                host,
+                parent,
+                force_rehash,
+                excludes: exclude,
+                one_file_system,
+                jobs,
+            };
+            let report = ops::backup::backup_with_options(repo, &paths, tag, &options)?;
             if json {
                 println!("{}", serde_json::to_string(&report)?);
             } else {
@@ -20,7 +45,9 @@ pub(super) fn run<B: Backend>(
                 println!(
                     "snapshot {}: {} files, {} data blobs added, {} skipped",
                     short_id(&report.snapshot, &ids),
-                    report.summary.files_new,
+                    report.summary.files_new
+                        + report.summary.files_changed
+                        + report.summary.files_unchanged,
                     report.summary.data_blobs_added,
                     report.summary.files_skipped
                 );
