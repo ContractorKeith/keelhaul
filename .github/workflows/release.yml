@@ -1,0 +1,201 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/release.yml, Cargo.toml, Cargo.lock]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/accept.sh
+
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            os: linux
+            arch: amd64
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-latest
+            os: linux
+            arch: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            os: darwin
+            arch: amd64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            os: darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+      RELEASE_OS: ${{ matrix.os }}
+      RELEASE_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      # Zig supplies the C cross-compiler for bundled zstd as well as the linker.
+      - name: Install pinned musl cross toolchain
+        if: matrix.os == 'linux'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cross-tools"
+          "$RUNNER_TEMP/cross-tools/bin/pip" install cargo-zigbuild==0.24.1 ziglang==0.14.1
+          echo "$RUNNER_TEMP/cross-tools/bin" >> "$GITHUB_PATH"
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_OS" == linux ]]; then
+            cargo zigbuild --locked --release --target "$TARGET"
+          else
+            cargo build --locked --release --target "$TARGET"
+          fi
+      - name: Strip, inspect and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/$TARGET/release/keelhaul"
+          if [[ "$RELEASE_OS" == linux ]]; then
+            objcopy --strip-all "$binary" "$binary.stripped" || {
+              # GNU objcopy on x86 runners may not support AArch64.
+              sudo apt-get update
+              sudo apt-get install -y binutils-aarch64-linux-gnu
+              aarch64-linux-gnu-objcopy --strip-all "$binary" "$binary.stripped"
+            }
+            mv "$binary.stripped" "$binary"
+            file "$binary"
+            # A static PIE may have a DYNAMIC section, but must have neither a
+            # program interpreter nor any shared-library dependencies.
+            headers="$(readelf -l "$binary")"
+            libraries="$(readelf -d "$binary")"
+            if grep -q INTERP <<< "$headers" || grep -q NEEDED <<< "$libraries"; then
+              echo 'Expected a static musl binary with no shared-library dependencies.' >&2
+              exit 1
+            fi
+            ldd "$binary" || true
+            if [[ "$RELEASE_ARCH" == amd64 ]]; then
+              "$binary" version
+            else
+              echo 'Skipping arm64 execution on x86_64; ELF static-link checks passed.'
+            fi
+          else
+            strip "$binary"
+            file "$binary"
+            if [[ "$RELEASE_ARCH" == arm64 && "$(uname -m)" == arm64 ]] ||
+               [[ "$RELEASE_ARCH" == amd64 && "$(uname -m)" == x86_64 ]]; then
+              "$binary" version
+            else
+              echo "Skipping $RELEASE_ARCH execution on $(uname -m)."
+            fi
+          fi
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
+          mkdir -p dist staging
+          cp "target/$TARGET/release/keelhaul" LICENSE README.md staging/
+          tar -czf "dist/keelhaul_v${version}_${RELEASE_OS}_${RELEASE_ARCH}.tar.gz" -C staging keelhaul LICENSE README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keelhaul-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: keelhaul-*
+          merge-multiple: true
+          path: dist
+      - name: Check archives and calculate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          test "$(find . -name '*.tar.gz' | wc -l)" -eq 4
+          for archive in *.tar.gz; do
+            tar -tzf "$archive"
+          done
+          sha256sum keelhaul_*.tar.gz > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keelhaul-checksums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: [build, checksums]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: keelhaul-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums and release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum keelhaul_*.tar.gz > SHA256SUMS)
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          lines = Path('CHANGELOG.md').read_text().splitlines()
+          notes = []
+          found = False
+          for line in lines:
+              if line.startswith('## '):
+                  if found:
+                      break
+                  found = line.split()[1] == version
+              elif found:
+                  notes.append(line)
+          if not found or not '\n'.join(notes).strip():
+              raise SystemExit(f'Missing changelog notes for {version}')
+          Path('release-notes.md').write_text('\n'.join(notes).strip() + '\n')
+          PY
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file release-notes.md dist/*.tar.gz dist/SHA256SUMS

@@ -65,6 +65,7 @@ completes.
 | 24 | `dump`, `diff`, `stats`, `copy`, `repair`, `mount` | Later | | `repair` after real damage reports |
 | 25 | Config file / named profiles | Later | | flags + env only in v1 |
 | 26 | More backends (B2, Azure, GCS, rclone) | Later | | S3-compatible covers most |
+| 31 | Sparse-file holes (SEEK_HOLE on backup, sparse restore) | Later | | |
 | 27 | Windows | Drop | | VSS, ACLs, path rules |
 | 28 | Unencrypted repositories | Drop | | ADR 0001 |
 | 29 | Cross-repository dedup | Drop | | keyed IDs, ADR 0001 |
