@@ -134,7 +134,18 @@ fn command_source_new_password_and_conflicting_sources() {
     success(cli(root, &source, &["init", "--json"], None));
     let pw = root.join("new-pw");
     fs::write(&pw, "pw2\n").unwrap();
-    success(cli(root, &source, &["key", "add", "--json"], Some(&pw)));
+    success(cli(
+        root,
+        &source,
+        &[
+            "key",
+            "add",
+            "--new-password-file",
+            pw.to_str().unwrap(),
+            "--json",
+        ],
+        None,
+    ));
     success(cli(
         root,
         &["--password-file", pw.to_str().unwrap()],

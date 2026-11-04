@@ -203,3 +203,32 @@ fn config_vector_and_refusals() {
     extra["future"] = json!(true);
     assert!(Config::parse(&serde_json::to_vec(&extra).unwrap()).is_ok());
 }
+
+#[test]
+fn config_pack_targets_and_strict_timestamps() {
+    let mut v: Value = crate::vectors::load("config.json");
+    for target in [1 << 20, 32 << 20, 256 << 20] {
+        v["pack_target"] = json!(target);
+        assert!(Config::parse(&serde_json::to_vec(&v).unwrap()).is_ok());
+    }
+    for target in [0, (1 << 20) - 1, (256 << 20) + 1] {
+        v["pack_target"] = json!(target);
+        assert!(Config::parse(&serde_json::to_vec(&v).unwrap()).is_err());
+    }
+    v["pack_target"] = json!(32 << 20);
+    for time in [
+        "2026-11-04T14:03:22+02:00",
+        "2026-11-04T14:03:22Z",
+        "2026-11-04T14:03:22.12345678Z",
+        "2026-11-04t14:03:22.123456789Z",
+    ] {
+        v["created"] = json!(time);
+        assert!(
+            Config::parse(&serde_json::to_vec(&v).unwrap()).is_err(),
+            "{time}"
+        );
+        let mut slot: Value = crate::vectors::load("slot-keyfile.json");
+        slot["slot"]["created"] = json!(time);
+        assert!(KeySlot::parse(&serde_json::to_vec(&slot["slot"]).unwrap()).is_err());
+    }
+}

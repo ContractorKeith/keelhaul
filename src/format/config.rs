@@ -48,9 +48,11 @@ impl Config {
         if config.chunker.min != 524288
             || config.chunker.avg != 1048576
             || config.chunker.max != 8388608
-            || config.pack_target != 16777216
         {
-            return Err("invalid v1 chunker sizes or pack target".into());
+            return Err("invalid v1 chunker sizes".into());
+        }
+        if !(1024 * 1024..=256 * 1024 * 1024).contains(&config.pack_target) {
+            return Err("pack target must be 1 MiB through 256 MiB".into());
         }
         Ok(config)
     }

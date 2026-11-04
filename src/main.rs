@@ -17,13 +17,20 @@ fn main() -> ExitCode {
             } else {
                 Ok(())
             };
-            let _ = error.print();
+            if error.use_stderr() {
+                let json = std::env::args_os().any(|arg| arg == "--json");
+                exit::report(&error.to_string(), Failure::Usage, json);
+            } else {
+                let _ = error.print();
+            }
             return ExitCode::from(exit::code(result));
         }
     };
+    let json = cli.json;
     let result = cli::run(cli).map_err(|error| {
-        eprintln!("keelhaul: {error:#}");
-        exit::failure(error.as_ref())
+        let failure = exit::failure(error.as_ref());
+        exit::report(&format!("{error:#}"), failure, json);
+        failure
     });
     ExitCode::from(exit::code(result))
 }

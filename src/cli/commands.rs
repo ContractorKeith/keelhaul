@@ -7,12 +7,6 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Version => output::version(io::stdout().lock(), cli.json)?,
         command => {
             use crate::{repo::Repository, secret};
-            let sources = usize::from(cli.password_file.is_some())
-                + usize::from(cli.password_command.is_some())
-                + usize::from(cli.key_file.is_some());
-            if sources > 1 {
-                return Err(secret::Error::ConflictingSources.into());
-            }
             let path = cli
                 .repo
                 .ok_or_else(|| anyhow::anyhow!("--repo is required"))?;
@@ -43,10 +37,13 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                             crate::ops::key::render_list(io::stdout().lock(), &repo, cli.json)?;
                             return Ok(());
                         }
-                        KeyCommand::Add { new_key_file } => {
+                        KeyCommand::Add {
+                            new_key_file,
+                            new_password_file,
+                        } => {
                             let new_secret = match new_key_file {
                                 Some(path) => secret::new_key_file(&path)?,
-                                None => secret::new_password()?,
+                                None => secret::new_password(new_password_file.as_deref())?,
                             };
                             let id = repo.add_key(&new_secret)?;
                             (

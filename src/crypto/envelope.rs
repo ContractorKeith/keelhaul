@@ -142,6 +142,9 @@ pub fn open(key: &[u8; 32], label: Label, stored: &[u8]) -> Result<Vec<u8>, Erro
             let mut decoder = zstd::stream::read::Decoder::with_buffer(bytes)
                 .map_err(|e| Error::BadFormat(e.to_string()))?
                 .single_frame();
+            decoder
+                .window_log_max(27)
+                .map_err(|e| Error::BadFormat(e.to_string()))?;
             let mut payload = Vec::new();
             (&mut decoder)
                 .take(MAX_PAYLOAD + 1)
@@ -151,6 +154,9 @@ pub fn open(key: &[u8; 32], label: Label, stored: &[u8]) -> Result<Vec<u8>, Erro
                 return Err(Error::BadFormat(
                     "decompressed payload exceeds 64 MiB".into(),
                 ));
+            }
+            if payload.is_empty() {
+                return Err(Error::BadFormat("compressed payload is empty".into()));
             }
             if !decoder.finish().is_empty() {
                 return Err(Error::BadFormat("trailing bytes after zstd frame".into()));

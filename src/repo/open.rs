@@ -15,6 +15,14 @@ pub enum Error {
     Backend(#[from] BackendError),
     #[error("wrong secret: no key slot matches")]
     WrongSecret,
+    #[error(
+        "wrong secret: no key slot matches ({unreadable} of {total} slots unreadable: {objects})"
+    )]
+    WrongSecretUnreadable {
+        unreadable: usize,
+        total: usize,
+        objects: String,
+    },
     #[error("damage: {object}: {problem}: {detail}")]
     Damage {
         object: String,
@@ -67,11 +75,14 @@ impl<B: Backend> Repository<B> {
     pub fn open(backend: B, secret: &Secret) -> Result<Self, Error> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
+        let total = entries.len();
+        let mut unreadable = Vec::new();
         let mut master = None;
         for entry in entries {
             let bytes = backend.read(&entry.name)?;
             // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
             let Ok(slot) = KeySlot::parse(&bytes) else {
+                unreadable.push(entry.name.to_string());
                 continue;
             };
             if let Ok(key) = slot::unwrap(&slot, secret) {
@@ -79,7 +90,17 @@ impl<B: Backend> Repository<B> {
                 break;
             }
         }
-        let master = master.ok_or(Error::WrongSecret)?;
+        let master = master.ok_or_else(|| {
+            if unreadable.is_empty() {
+                Error::WrongSecret
+            } else {
+                Error::WrongSecretUnreadable {
+                    unreadable: unreadable.len(),
+                    total,
+                    objects: unreadable.join(", "),
+                }
+            }
+        })?;
         let name = ObjectName::new("config")?;
         let bytes = backend.read(&name).map_err(|e| match e {
             BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
@@ -128,7 +149,6 @@ impl<B: Backend> Repository<B> {
 
     pub fn remove_key(&self, id: &str) -> Result<(), Error> {
         // M5: exclusive lock
-        let name = ObjectName::new(&format!("keys/{id}"))?;
         let slots = self.list_keys()?;
         if !slots.iter().any(|(found, _)| found == id) {
             return Err(Error::Refused(format!("key slot {id} not found")));
@@ -136,7 +156,8 @@ impl<B: Backend> Repository<B> {
         if slots.len() <= 1 {
             return Err(Error::Refused("cannot remove the last key slot".into()));
         }
-        self.backend.delete(&name)?;
+        self.backend
+            .delete(&ObjectName::new(&format!("keys/{id}"))?)?;
         Ok(())
     }
 }
@@ -146,5 +167,40 @@ fn damage(object: &str, problem: &'static str, detail: &str) -> Error {
         object: object.into(),
         problem,
         detail: detail.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::memory::MemoryBackend;
+
+    #[test]
+    fn opens_alternate_pack_target_and_refuses_zero() {
+        for target in [32 * 1024 * 1024, 0] {
+            let secret = Secret::KeyFile([5; 32]);
+            let mut repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
+            repo.config.pack_target = target;
+            let stored = envelope::seal(
+                &repo.master.subkeys().encryption,
+                Label::Config,
+                &serde_json::to_vec(&repo.config).unwrap(),
+            )
+            .unwrap();
+            repo.backend.plant_raw("config", &stored).unwrap();
+            match Repository::open(repo.backend, &secret) {
+                Ok(opened) => assert_eq!(opened.config.pack_target, 32 * 1024 * 1024),
+                Err(error) => {
+                    assert_eq!(target, 0);
+                    assert!(matches!(
+                        error,
+                        Error::Damage {
+                            problem: "bad-format",
+                            ..
+                        }
+                    ));
+                }
+            }
+        }
     }
 }

@@ -10,14 +10,24 @@ use std::path::PathBuf;
 pub struct Cli {
     #[arg(short = 'r', long, env = "KEELHAUL_REPO", global = true)]
     repo: Option<String>,
-    #[arg(long, env = "KEELHAUL_PASSWORD_FILE", global = true)]
+    #[arg(
+        long,
+        env = "KEELHAUL_PASSWORD_FILE",
+        hide_env_values = true,
+        global = true
+    )]
     password_file: Option<PathBuf>,
-    #[arg(long, env = "KEELHAUL_PASSWORD_COMMAND", global = true)]
+    #[arg(
+        long,
+        env = "KEELHAUL_PASSWORD_COMMAND",
+        hide_env_values = true,
+        global = true
+    )]
     password_command: Option<String>,
-    #[arg(long, env = "KEELHAUL_KEY_FILE", global = true)]
+    #[arg(long, env = "KEELHAUL_KEY_FILE", hide_env_values = true, global = true)]
     key_file: Option<PathBuf>,
     #[arg(long, global = true)]
-    json: bool,
+    pub json: bool,
     #[arg(short, long, global = true)]
     quiet: bool,
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
@@ -42,8 +52,10 @@ pub(super) enum Command {
 pub(super) enum KeyCommand {
     List,
     Add {
-        #[arg(long)]
+        #[arg(long, conflicts_with = "new_password_file")]
         new_key_file: Option<PathBuf>,
+        #[arg(long, env = "KEELHAUL_NEW_PASSWORD_FILE", hide_env_values = true)]
+        new_password_file: Option<PathBuf>,
     },
     Remove {
         id: String,

@@ -13,6 +13,15 @@ pub(crate) fn timestamp() -> String {
 }
 
 pub(crate) fn validate_time(value: &str) -> Result<(), String> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 30
+        || bytes[10] != b'T'
+        || bytes[19] != b'.'
+        || bytes[29] != b'Z'
+        || !bytes[20..29].iter().all(u8::is_ascii_digit)
+    {
+        return Err("timestamp must use UTC Z and exactly 9 fractional digits".into());
+    }
     time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
         .map(|_| ())
         .map_err(|e| format!("invalid timestamp: {e}"))

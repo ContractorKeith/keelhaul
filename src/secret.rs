@@ -116,8 +116,8 @@ fn prompt_with(
     Ok(Secret::Password(first))
 }
 
-pub fn new_password() -> Result<Secret, Error> {
-    if let Some(path) = std::env::var_os("KEELHAUL_NEW_PASSWORD_FILE") {
+pub fn new_password(file: Option<&Path>) -> Result<Secret, Error> {
+    if let Some(path) = file {
         return password(fs::read(path)?);
     }
     prompt(true)
