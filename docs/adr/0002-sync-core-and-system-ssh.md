@@ -1,0 +1,3 @@
+# Sync core with threads, and SFTP through the system ssh
+
+keelhaul has no async runtime: the Backend trait is blocking and the backup pipeline is scoped threads joined by bounded channels; S3 uses sans-IO signing (rusty-s3) over a sync HTTP client (ureq), and SFTP spawns `ssh -s sftp` and speaks SFTP v3 over its pipes with a small client of our own. Chosen over tokio, aws-sdk-s3 and libssh2 because crash and interrupt behaviour is easier to reason about and test without cancellation semantics, and because the system ssh honours the user's `~/.ssh/config`, agent and known_hosts exactly. The cost is owning an SFTP client and an S3 client surface that a library would have given us.
