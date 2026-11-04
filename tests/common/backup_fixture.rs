@@ -4,12 +4,11 @@ use keelhaul::{
     repo::Repository,
     secret::Secret,
 };
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStringExt;
 use std::{
     fs,
-    os::unix::{
-        ffi::OsStringExt,
-        fs::{MetadataExt, PermissionsExt, symlink},
-    },
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::Path,
 };
 fn fixture(root: &Path) {
@@ -30,6 +29,7 @@ fn fixture(root: &Path) {
         fs::write(root.join(name), bytes).unwrap();
     }
     fs::write(root.join("héllo"), b"unicode").unwrap();
+    #[cfg(target_os = "linux")]
     fs::write(
         root.join(std::ffi::OsString::from_vec(vec![b'n', 0xff])),
         b"raw",

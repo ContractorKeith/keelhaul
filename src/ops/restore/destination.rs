@@ -84,7 +84,7 @@ impl Destination {
         fs::chmodat(
             &parent,
             &name,
-            Mode::from_raw_mode(entry.mode),
+            Mode::from_raw_mode(entry.mode as fs::RawMode),
             AtFlags::SYMLINK_NOFOLLOW,
         )
         .map_err(os)?;
@@ -172,7 +172,7 @@ fn apply(file: &File, entry: &Entry) -> Result<(), Error> {
         let (uid, gid) = owners(entry)?;
         fs::fchown(file, Some(uid), Some(gid)).map_err(os)?;
     }
-    fs::fchmod(file, Mode::from_raw_mode(entry.mode)).map_err(os)?;
+    fs::fchmod(file, Mode::from_raw_mode(entry.mode as fs::RawMode)).map_err(os)?;
     fs::futimens(file, &times(entry)?).map_err(os)
 }
 
