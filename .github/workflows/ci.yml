@@ -5,17 +5,25 @@ on:
   pull_request:
 jobs:
   accept:
-    name: accept (${{ matrix.os }})
+    name: accept (${{ matrix.os }}, ${{ matrix.rust }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            rust: stable
+          - os: ubuntu-latest
+            rust: '1.98'
+          - os: macos-latest
+            rust: stable
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.98'
+          toolchain: ${{ matrix.rust }}
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust }}
       - run: scripts/accept.sh

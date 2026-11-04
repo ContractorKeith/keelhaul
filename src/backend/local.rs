@@ -1,4 +1,5 @@
-use super::{Backend, BackendError, Entry, Kind, ObjectName, object_error};
+use super::local_fs::{self, TempFile, at, ensure_directory, lock_result};
+use super::{Backend, BackendError, Entry, ForeignEntry, Kind, ObjectName, foreign, object_error};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
@@ -22,62 +23,33 @@ impl LocalBackend {
         self.root.join(name.as_str())
     }
 
-    fn collect(
+    fn write_object(
         &self,
-        directory: &Path,
-        kind: Kind,
-        entries: &mut Vec<Entry>,
+        name: &ObjectName,
+        path: &Path,
+        bytes: &[u8],
     ) -> Result<(), BackendError> {
-        let children = match fs::read_dir(directory) {
-            Ok(children) => children,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error.into()),
-        };
-        for child in children {
-            let child = child?;
-            if !child.file_type()?.is_file() {
-                continue;
-            }
-            let path = child.path();
-            let relative = path
-                .strip_prefix(&self.root)
-                .expect("listing only visits directories beneath the root");
-            if let Some(relative) = relative.to_str()
-                && let Ok(name) = ObjectName::new(relative)
-                && name.kind() == kind
-            {
-                match child.metadata() {
-                    Ok(metadata) => entries.push(Entry {
-                        name,
-                        size: metadata.len(),
-                    }),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error.into()),
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Backend for LocalBackend {
-    fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
-        let path = self.path(name);
         let parent = path
             .parent()
             .expect("validated object has a parent directory");
         ensure_directory(parent, &self.root)?;
-        // OS directory locks serialize check + rename across independent instances
-        // and processes. Closing the handle releases the lock even after a crash.
-        let directory = File::open(parent)?;
-        directory.lock()?;
-        match fs::read(&path) {
-            Ok(existing) if existing == bytes => {
-                File::open(&path)?.sync_all()?;
+        let directory = File::open(parent).map_err(|e| at(parent, e))?;
+        lock_result(directory.lock()).map_err(|e| at(parent, e))?;
+        match fs::metadata(path) {
+            Ok(metadata) => {
+                if metadata.len() != bytes.len() as u64 {
+                    return Err(BackendError::AlreadyExists(name.clone()));
+                }
+                let mut existing = File::open(path)?;
+                let mut stored = Vec::new();
+                existing.read_to_end(&mut stored)?;
+                if stored != bytes {
+                    return Err(BackendError::AlreadyExists(name.clone()));
+                }
+                existing.sync_all()?;
                 directory.sync_all()?;
                 return Ok(());
             }
-            Ok(_) => return Err(BackendError::AlreadyExists(name.clone())),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
@@ -89,17 +61,45 @@ impl Backend for LocalBackend {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&temp)?;
-        let cleanup = TempFile(temp);
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&cleanup.0, &path)?;
+            .open(&temp)
+            .map_err(|e| at(&temp, e))?;
+        let temp = TempFile(temp);
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|e| at(&temp.0, e))?;
+        fs::rename(&temp.0, path)?;
         directory.sync_all()?;
         Ok(())
     }
 
+    fn delete_path(&self, path: &Path) -> Result<(), BackendError> {
+        let parent = path
+            .parent()
+            .expect("validated path has a parent directory");
+        let directory = match File::open(parent) {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(at(parent, error)),
+        };
+        lock_result(directory.lock()).map_err(|e| at(parent, e))?;
+        match fs::remove_file(path) {
+            Ok(()) => directory.sync_all().map_err(|e| at(parent, e)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(at(path, error)),
+        }
+    }
+}
+
+impl Backend for LocalBackend {
+    fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
+        let path = self.path(name);
+        self.write_object(name, &path, bytes)
+            .map_err(|e| e.context(Some(name), Some(&path)))
+    }
+
     fn read(&self, name: &ObjectName) -> Result<Vec<u8>, BackendError> {
-        fs::read(self.path(name)).map_err(|error| object_error(name, error))
+        let path = self.path(name);
+        fs::read(&path).map_err(|e| object_error(name, &path, e))
     }
 
     fn read_range(
@@ -108,93 +108,55 @@ impl Backend for LocalBackend {
         offset: u64,
         len: u64,
     ) -> Result<Vec<u8>, BackendError> {
-        let mut file = File::open(self.path(name)).map_err(|error| object_error(name, error))?;
-        let size = file.metadata()?.len();
-        file.seek(SeekFrom::Start(offset.min(size)))?;
-        let mut bytes = Vec::new();
-        file.take(len).read_to_end(&mut bytes)?;
-        Ok(bytes)
+        let path = self.path(name);
+        let read = || -> io::Result<Vec<u8>> {
+            let mut file = File::open(&path)?;
+            let size = file.metadata()?.len();
+            file.seek(SeekFrom::Start(offset.min(size)))?;
+            let mut bytes = Vec::new();
+            file.take(len).read_to_end(&mut bytes)?;
+            Ok(bytes)
+        };
+        read().map_err(|e| object_error(name, &path, e))
     }
 
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError> {
-        let directory = self.root.join(kind.directory());
-        let mut entries = Vec::new();
-        if kind == Kind::Data {
-            let children = match fs::read_dir(&directory) {
-                Ok(children) => children,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(entries),
-                Err(error) => return Err(error.into()),
-            };
-            for child in children {
-                let child = child?;
-                if child.file_type()?.is_dir()
-                    && child
-                        .file_name()
-                        .to_str()
-                        .is_some_and(|s| super::valid_hex(s, 2))
-                {
-                    self.collect(&child.path(), kind, &mut entries)?;
-                }
-            }
-        } else {
-            self.collect(&directory, kind, &mut entries)?;
-        }
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(entries)
+        Ok(local_fs::scan(&self.root, kind)?
+            .into_iter()
+            .filter_map(|entry| {
+                let name = ObjectName::new(&entry.raw).ok()?;
+                (name.kind() == kind).then_some(Entry {
+                    name,
+                    size: entry.size,
+                    modified: entry.modified,
+                })
+            })
+            .collect())
+    }
+
+    fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError> {
+        Ok(local_fs::scan(&self.root, kind)?
+            .into_iter()
+            .filter(|entry| foreign::kind(&entry.raw) == Some(kind))
+            .collect())
+    }
+
+    fn delete_foreign(&self, raw: &str) -> Result<(), BackendError> {
+        foreign::validate(raw)?;
+        local_fs::check_parents(&self.root, raw)?;
+        self.delete_path(&self.root.join(raw))
     }
 
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError> {
-        fs::metadata(self.path(name))
+        let path = self.path(name);
+        fs::metadata(&path)
             .map(|metadata| metadata.len())
-            .map_err(|error| object_error(name, error))
+            .map_err(|e| object_error(name, &path, e))
     }
 
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError> {
         let path = self.path(name);
-        let parent = path
-            .parent()
-            .expect("validated object has a parent directory");
-        let directory = File::open(parent).map_err(|error| object_error(name, error))?;
-        directory.lock()?;
-        fs::remove_file(path).map_err(|error| object_error(name, error))?;
-        directory.sync_all()?;
-        Ok(())
-    }
-}
-
-// Existing directories need no sync. Internal directory creation persists its
-// parent entry; creating the repository root tolerates an unreadable parent.
-fn ensure_directory(path: &Path, root: &Path) -> io::Result<()> {
-    if path.is_dir() {
-        return Ok(());
-    }
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    if path == root {
-        fs::create_dir_all(path)?;
-    } else {
-        ensure_directory(parent, root)?;
-        match fs::create_dir(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => {
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    File::open(path)?.sync_all()?;
-    match File::open(parent).and_then(|directory| directory.sync_all()) {
-        Err(error) if path == root && error.kind() == io::ErrorKind::PermissionDenied => Ok(()),
-        result => result,
-    }
-}
-
-struct TempFile(PathBuf);
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        // Failed writes leave no object; after rename the temporary name is gone.
-        let _ = fs::remove_file(&self.0);
+        self.delete_path(&path)
+            .map_err(|e| e.context(Some(name), Some(&path)))
     }
 }

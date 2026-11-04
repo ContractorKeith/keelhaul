@@ -1,8 +1,14 @@
 //! Blocking storage of validated repository object names and opaque bytes.
+mod foreign;
 pub mod local;
+mod local_fs;
 pub mod memory;
 
-use std::{fmt, io};
+use std::{
+    fmt, io,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
@@ -10,10 +16,42 @@ pub enum BackendError {
     NotFound(ObjectName),
     #[error("object already exists with different content: {0}")]
     AlreadyExists(ObjectName),
-    #[error(transparent)]
-    Io(#[from] io::Error),
+    #[error("I/O error for {name:?} at {path:?}: {source}")]
+    Io {
+        name: Option<ObjectName>,
+        path: Option<PathBuf>,
+        #[source]
+        source: io::Error,
+    },
     #[error("invalid object name: {0}")]
     InvalidName(String),
+}
+
+impl From<io::Error> for BackendError {
+    fn from(source: io::Error) -> Self {
+        Self::Io {
+            name: None,
+            path: None,
+            source,
+        }
+    }
+}
+
+impl BackendError {
+    pub(crate) fn context(self, name: Option<&ObjectName>, path: Option<&Path>) -> Self {
+        match self {
+            Self::Io {
+                name: old_name,
+                path: old_path,
+                source,
+            } => Self::Io {
+                name: old_name.or_else(|| name.cloned()),
+                path: old_path.or_else(|| path.map(Path::to_path_buf)),
+                source,
+            },
+            other => other,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -103,6 +141,14 @@ impl Kind {
 pub struct Entry {
     pub name: ObjectName,
     pub size: u64,
+    pub modified: Option<SystemTime>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForeignEntry {
+    pub raw: String,
+    pub size: u64,
+    pub modified: Option<SystemTime>,
 }
 
 /// Writes are create-once: an identical retry succeeds; different bytes fail.
@@ -113,15 +159,19 @@ pub trait Backend: Send + Sync {
     fn read_range(&self, name: &ObjectName, offset: u64, len: u64)
     -> Result<Vec<u8>, BackendError>;
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError>;
+    fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError>;
+    /// Deletes only safe, non-object names beneath a known repository directory.
+    /// Both deletion operations are idempotent when the target is missing.
+    fn delete_foreign(&self, raw: &str) -> Result<(), BackendError>;
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError>;
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError>;
 }
 
-pub(crate) fn object_error(name: &ObjectName, error: io::Error) -> BackendError {
+pub(crate) fn object_error(name: &ObjectName, path: &Path, error: io::Error) -> BackendError {
     if error.kind() == io::ErrorKind::NotFound {
         BackendError::NotFound(name.clone())
     } else {
-        BackendError::Io(error)
+        BackendError::from(error).context(Some(name), Some(path))
     }
 }
 
