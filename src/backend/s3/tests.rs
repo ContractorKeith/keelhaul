@@ -4,15 +4,13 @@ use std::time::Duration;
 
 #[test]
 fn s3_config_debug_redacts_credentials() {
-    let config = S3Config {
-        location: S3Location::parse("s3:https://example.com/bucket").unwrap(),
-        credentials: Credentials::new_with_token("ACCESS12345678", "very-secret", "session-secret"),
-        region: "us-east-1".into(),
-        timeout: Duration::from_secs(60),
-        verbose: false,
-    };
+    let config = S3Config::new(
+        S3Location::parse("s3:https://example.com/bucket").unwrap(),
+        Credentials::new_with_token("ACCESS12345678", "very-secret", "session-secret"),
+    );
     let debug = format!("{config:?}");
     assert!(debug.contains("****5678"));
+    assert!(!debug.contains("ACCESS12345678"));
     for secret in ["ACCESS1234", "very-secret", "session-secret", "Signature"] {
         assert!(!debug.contains(secret));
     }
@@ -126,12 +124,13 @@ pub(super) fn mock_headers(
         }
         requests
     });
-    let backend = S3Backend::new(S3Config {
-        location: S3Location::parse(&endpoint).unwrap(),
-        credentials: Credentials::new("key", "secret"),
-        region: "us-east-1".into(),
-        timeout: Duration::from_secs(3),
-        verbose: false,
+    let backend = S3Backend::new({
+        let mut config = S3Config::new(
+            S3Location::parse(&endpoint).unwrap(),
+            Credentials::new("key", "secret"),
+        );
+        config.timeout = Duration::from_secs(3);
+        config
     })
     .unwrap();
     (backend, worker)
@@ -172,11 +171,19 @@ fn s3_ignored_conditional_header_falls_back_once() {
 
 #[test]
 fn s3_unsupported_conditional_header_falls_back() {
-    let (backend, worker) = mock(vec![(200, ""), (400, ""), (204, ""), (404, ""), (200, "")]);
-    backend
-        .write(&ObjectName::new("config").unwrap(), b"abc")
-        .unwrap();
-    assert_eq!(worker.join().unwrap().len(), 5);
+    for status in [400, 401, 403, 404, 405, 409] {
+        let (backend, worker) = mock(vec![
+            (200, ""),
+            (status, ""),
+            (204, ""),
+            (404, ""),
+            (200, ""),
+        ]);
+        backend
+            .write(&ObjectName::new("config").unwrap(), b"abc")
+            .unwrap();
+        assert_eq!(worker.join().unwrap().len(), 5);
+    }
 }
 
 #[test]

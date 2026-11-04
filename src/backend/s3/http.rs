@@ -1,11 +1,12 @@
-use super::{S3Backend, error};
+use super::{S3Backend, error, retry};
 use crate::backend::BackendError;
 use rusty_s3::S3Action;
-use std::{io, thread, time::Duration};
+use std::{thread, time::Duration};
 
 pub(super) struct Response {
     pub status: u16,
     pub size: Option<u64>,
+    retry_after: Option<u64>,
     pub content_range: Option<String>,
     pub bytes: Vec<u8>,
 }
@@ -23,7 +24,7 @@ impl S3Backend {
                 .headers_mut()
                 .insert((*key).to_owned(), (*value).to_owned());
         }
-        for attempt in 0..5 {
+        for attempt in 0..retry::ATTEMPTS {
             let url = action.sign(Duration::from_secs(3600));
             let mut request = ureq::http::Request::builder()
                 .method(A::METHOD.to_string().as_str())
@@ -46,10 +47,23 @@ impl S3Backend {
                     .get("content-range")
                     .and_then(|v| v.to_str().ok())
                     .map(str::to_owned);
+                let retry_after = if matches!(status, 429 | 503) {
+                    r.headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                } else {
+                    None
+                };
                 let bytes = if (200..300).contains(&status) {
+                    if A::METHOD != rusty_s3::Method::Head
+                        && size.is_some_and(|size| size > retry::BODY_LIMIT)
+                    {
+                        return Err(ureq::Error::BodyExceedsLimit(retry::BODY_LIMIT));
+                    }
                     r.body_mut()
                         .with_config()
-                        .limit(128 * 1024 * 1024)
+                        .limit(retry::BODY_LIMIT)
                         .read_to_vec()?
                 } else {
                     Vec::new()
@@ -58,22 +72,31 @@ impl S3Backend {
                     status,
                     size,
                     content_range,
+                    retry_after,
                     bytes,
                 })
             });
             let retry = match &result {
                 Ok(r) => r.status == 429 || (500..600).contains(&r.status),
-                Err(ureq::Error::Io(e)) => e.kind() == io::ErrorKind::ConnectionReset,
-                _ => false,
+                Err(e) => retry::retryable(e),
             };
-            if retry && attempt < 4 {
-                thread::sleep(Duration::from_millis((100_u64 << attempt).min(1000)));
+            if retry && attempt + 1 < retry::ATTEMPTS {
+                let retry_after = result.as_ref().ok().and_then(|r| r.retry_after);
+                let delay = retry::delay(attempt, retry_after)?;
+                if self.verbose {
+                    match &result {
+                        Err(e) => {
+                            eprintln!("{}; retrying in {} ms", retry::cause(e), delay.as_millis())
+                        }
+                        Ok(r) => {
+                            eprintln!("S3 HTTP {}; retrying in {} ms", r.status, delay.as_millis())
+                        }
+                    }
+                }
+                thread::sleep(delay);
                 continue;
             }
-            return result.map_err(|e| match e {
-                ureq::Error::Timeout(_) => error("S3 request timed out"),
-                _ => error("S3 transport failed (check endpoint, TLS, and connectivity)"),
-            });
+            return result.map_err(|e| error(retry::cause(&e)));
         }
         unreachable!("bounded retry loop returns on its last attempt")
     }

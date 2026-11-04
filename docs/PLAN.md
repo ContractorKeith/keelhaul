@@ -158,7 +158,11 @@ keelhaul version
 `<snap>` is a unique ID prefix or `latest` (newest for this host and paths).
 
 Global flags: `-r/--repo` (or `KEELHAUL_REPO`): a path, `sftp:[user@]host:/path`, or
-`s3:https://endpoint/bucket[/prefix]`. Secrets come from one of `--password-file` /
+`s3:https://endpoint/bucket[/prefix]`. For S3, the endpoint is scheme plus authority:
+the first path segment is always the bucket (3–63 lowercase letters, digits, dots or
+hyphens), followed by the optional repository prefix. Endpoint path prefixes are not
+supported; `s3:https://host/s3/bucket/p` selects bucket `s3` and is rejected because its
+name is too short, rather than routing through an endpoint path `/s3`. Secrets come from one of `--password-file` /
 `KEELHAUL_PASSWORD_FILE`, `--password-command` / `KEELHAUL_PASSWORD_COMMAND`, `--key-file` /
 `KEELHAUL_KEY_FILE`, or a TTY prompt. Never from argv. S3 credentials come from
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`. Other flags:

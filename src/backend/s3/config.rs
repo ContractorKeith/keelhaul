@@ -1,6 +1,7 @@
-use super::error;
+use super::{S3Backend, error};
 use crate::backend::BackendError;
 use rusty_s3::{Bucket, Credentials, UrlStyle};
+use std::sync::Mutex;
 use std::{env, fmt, time::Duration};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,11 +39,14 @@ impl S3Location {
             .1;
         let mut parts = path.split('/');
         let bucket = parts.next().ok_or_else(invalid)?;
-        if bucket.is_empty()
+        if !(3..=63).contains(&bucket.len())
             || !bucket
                 .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
-            || matches!(bucket, "." | "..")
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b".-".contains(&b))
+            || !bucket.as_bytes()[0].is_ascii_alphanumeric()
+            || !bucket.as_bytes()[bucket.len() - 1].is_ascii_alphanumeric()
+            || bucket.contains("..")
+            || bucket.parse::<std::net::Ipv4Addr>().is_ok()
         {
             return Err(invalid());
         }
@@ -63,8 +67,11 @@ impl S3Location {
             }
         }
         let prefix = String::from_utf8(decoded).map_err(|_| invalid())?;
-        let prefix = prefix.trim_end_matches('/');
-        if prefix.split('/').any(|p| matches!(p, "." | ".."))
+        if prefix.starts_with('/') {
+            return Err(invalid());
+        }
+        let prefix = prefix.strip_suffix('/').unwrap_or(&prefix);
+        if (!prefix.is_empty() && prefix.split('/').any(|p| matches!(p, "" | "." | "..")))
             || prefix.chars().any(char::is_control)
             || prefix.contains('\\')
         {
@@ -96,13 +103,50 @@ impl S3Location {
 
 pub struct S3Config {
     pub location: S3Location,
-    pub credentials: Credentials,
+    credentials: Credentials,
     pub region: String,
+    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, default 60 seconds).
+    /// Up to five attempts run, with capped, jittered backoff between attempts.
     pub timeout: Duration,
     pub verbose: bool,
 }
 
 impl S3Config {
+    /// Credentials remain private and Debug always redacts them.
+    /// ```compile_fail
+    /// use keelhaul::backend::s3::{S3Config, S3Location};
+    /// let config = S3Config::new(S3Location::parse("s3:https://host/bucket").unwrap(),
+    ///     rusty_s3::Credentials::new("access", "secret"));
+    /// println!("{:?}", config.credentials); // private: use the redacted config Debug
+    /// ```
+    pub fn new(location: S3Location, credentials: Credentials) -> Self {
+        Self {
+            location,
+            credentials,
+            region: "us-east-1".into(),
+            timeout: Duration::from_secs(60),
+            verbose: false,
+        }
+    }
+
+    pub(super) fn connect(self) -> Result<S3Backend, BackendError> {
+        let bucket = self.location.bucket(&self.region)?;
+        let agent = ureq::Agent::config_builder()
+            .timeout_global(Some(self.timeout))
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .build()
+            .new_agent();
+        Ok(S3Backend {
+            bucket,
+            credentials: self.credentials,
+            prefix: self.location.prefix,
+            agent,
+            conditional: Mutex::new(None),
+            verbose: self.verbose,
+        })
+    }
+
     pub fn from_env(location: S3Location, verbose: bool) -> Result<Self, BackendError> {
         let credentials = Credentials::from_env()
             .ok_or_else(|| error("S3 requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"))?;

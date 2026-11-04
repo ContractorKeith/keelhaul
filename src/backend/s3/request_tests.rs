@@ -108,12 +108,13 @@ fn s3_fallback_eight_distinct_uploads_overlap_after_one_probe() {
                 .count()
         })
     });
-    let backend = S3Backend::new(S3Config {
-        location: S3Location::parse(&endpoint).unwrap(),
-        credentials: Credentials::new("key", "secret"),
-        region: "us-east-1".into(),
-        timeout: Duration::from_secs(3),
-        verbose: false,
+    let backend = S3Backend::new({
+        let mut config = S3Config::new(
+            S3Location::parse(&endpoint).unwrap(),
+            Credentials::new("key", "secret"),
+        );
+        config.timeout = Duration::from_secs(3);
+        config
     })
     .unwrap();
     let start = Barrier::new(8);

@@ -44,13 +44,15 @@ impl Fixture {
         fixture
     }
     fn backend(&self, endpoint: &str, prefix: &str) -> S3Backend {
-        S3Backend::new(S3Config {
-            location: S3Location::parse(&format!("s3:{endpoint}/{}/{prefix}", self.bucket.name()))
-                .unwrap(),
-            credentials: self.credentials.clone(),
-            region: "us-east-1".into(),
-            timeout: Duration::from_secs(10),
-            verbose: true,
+        S3Backend::new({
+            let mut config = S3Config::new(
+                S3Location::parse(&format!("s3:{endpoint}/{}/{prefix}", self.bucket.name()))
+                    .unwrap(),
+                self.credentials.clone(),
+            );
+            config.timeout = Duration::from_secs(10);
+            config.verbose = true;
+            config
         })
         .unwrap()
     }
@@ -149,16 +151,17 @@ fn s3_retries_503_and_fails_fast_on_403() {
     assert_eq!(forbidden.requests.load(Ordering::Acquire), 1);
     assert_eq!(keelhaul::exit::code(Err(keelhaul::exit::Failure::Error)), 1);
     // Also exercise a real signature rejection from versitygw.
-    let backend = S3Backend::new(S3Config {
-        location: S3Location::parse(&format!(
-            "s3:http://127.0.0.1:7070/{}",
-            fixture.bucket.name()
-        ))
-        .unwrap(),
-        credentials: Credentials::new("keelhaul-test", "wrong-secret"),
-        region: "us-east-1".into(),
-        timeout: Duration::from_secs(5),
-        verbose: false,
+    let backend = S3Backend::new({
+        let mut config = S3Config::new(
+            S3Location::parse(&format!(
+                "s3:http://127.0.0.1:7070/{}",
+                fixture.bucket.name()
+            ))
+            .unwrap(),
+            Credentials::new("keelhaul-test", "wrong-secret"),
+        );
+        config.timeout = Duration::from_secs(5);
+        config
     })
     .unwrap();
     let error = backend.read(&name("config")).unwrap_err();

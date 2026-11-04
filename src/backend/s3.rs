@@ -5,6 +5,9 @@ mod list;
 mod range;
 #[cfg(test)]
 mod request_tests;
+mod retry;
+#[cfg(test)]
+mod retry_tests;
 #[cfg(test)]
 mod tests;
 use self::http::{Response, success};
@@ -34,21 +37,7 @@ fn error(message: &str) -> BackendError {
 
 impl S3Backend {
     pub fn new(config: S3Config) -> Result<Self, BackendError> {
-        let bucket = config.location.bucket(&config.region)?;
-        let agent = ureq::Agent::config_builder()
-            .timeout_global(Some(config.timeout))
-            .http_status_as_error(false)
-            .max_redirects(0)
-            .build()
-            .new_agent();
-        Ok(Self {
-            bucket,
-            credentials: config.credentials,
-            prefix: config.location.prefix,
-            agent,
-            conditional: Mutex::new(None),
-            verbose: config.verbose,
-        })
+        config.connect()
     }
 
     fn key(&self, raw: &str) -> String {
@@ -87,7 +76,7 @@ impl S3Backend {
         )?)?;
         let supported = match probe?.status {
             412 => true,
-            200..=299 | 400 | 501 => false,
+            200..=299 | 400..=499 | 501 => false,
             status => return Err(error(&format!("S3 conditional-write probe HTTP {status}"))),
         };
         if self.verbose {
