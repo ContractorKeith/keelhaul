@@ -94,3 +94,48 @@ fn envelope_random_roundtrips_and_nonces() {
         );
     }
 }
+
+#[test]
+fn concurrent_init_creates_exactly_one_slot() {
+    use keelhaul::backend::{Kind, local::LocalBackend};
+    use std::sync::Barrier;
+    let scratch = tempfile::tempdir().unwrap();
+    let barrier = Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let run = || {
+            let backend = LocalBackend::new(scratch.path()).unwrap();
+            barrier.wait();
+            Repository::init(backend, &Secret::KeyFile([9; 32]))
+        };
+        let first = scope.spawn(run);
+        let second = scope.spawn(run);
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    for error in results.into_iter().filter_map(Result::err) {
+        assert!(matches!(
+            error,
+            Error::Refused(_) | Error::Backend(keelhaul::backend::BackendError::AlreadyExists(_))
+        ));
+    }
+    let backend = LocalBackend::open(scratch.path()).unwrap();
+    assert_eq!(backend.list(Kind::Keys).unwrap().len(), 1);
+    assert!(Repository::open(backend, &Secret::KeyFile([9; 32])).is_ok());
+}
+
+#[test]
+fn interrupted_init_names_the_cleanup_remedy() {
+    let backend = MemoryBackend::new();
+    backend
+        .write(
+            &ObjectName::new("config").unwrap(),
+            b"config from interrupted init",
+        )
+        .unwrap();
+    let error = match Repository::init(backend, &Secret::KeyFile([9; 32])) {
+        Ok(_) => panic!("must refuse incomplete init"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("repository is not empty"));
+    assert!(error.to_string().contains("delete the directory"));
+}

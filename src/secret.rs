@@ -58,6 +58,23 @@ pub fn load(
     command: Option<&str>,
     key: Option<&Path>,
 ) -> Result<Secret, Error> {
+    load_with_confirmation(file, command, key, false)
+}
+
+pub fn load_for_init(
+    file: Option<&Path>,
+    command: Option<&str>,
+    key: Option<&Path>,
+) -> Result<Secret, Error> {
+    load_with_confirmation(file, command, key, true)
+}
+
+fn load_with_confirmation(
+    file: Option<&Path>,
+    command: Option<&str>,
+    key: Option<&Path>,
+    confirm: bool,
+) -> Result<Secret, Error> {
     let count =
         usize::from(file.is_some()) + usize::from(command.is_some()) + usize::from(key.is_some());
     if count > 1 {
@@ -78,15 +95,22 @@ pub fn load(
             fs::read(key)?.try_into().map_err(|_| Error::KeyLength)?,
         ));
     }
-    prompt(false)
+    prompt(confirm)
 }
 
 fn prompt(confirm: bool) -> Result<Secret, Error> {
     if !io::stdin().is_terminal() {
         return Err(Error::NoTty);
     }
-    let first = rpassword::prompt_password("Password: ")?;
-    if confirm && first != rpassword::prompt_password("Confirm password: ")? {
+    prompt_with(confirm, |message| rpassword::prompt_password(message))
+}
+
+fn prompt_with(
+    confirm: bool,
+    mut read: impl FnMut(&str) -> io::Result<String>,
+) -> Result<Secret, Error> {
+    let first = read("Password: ")?;
+    if confirm && first != read("Confirm password: ")? {
         return Err(Error::Mismatch);
     }
     Ok(Secret::Password(first))
@@ -114,6 +138,35 @@ pub fn new_key_file(path: &Path) -> Result<Secret, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn confirmation_checks_both_prompts() {
+        for (answers, confirm, succeeds, calls) in [
+            (vec!["same", "same"], true, true, 2),
+            (vec!["first", "different"], true, false, 2),
+            (vec!["single"], false, true, 1),
+        ] {
+            let mut answers = answers.into_iter();
+            let mut prompts = Vec::new();
+            let result = prompt_with(confirm, |message| {
+                prompts.push(message.to_owned());
+                Ok(answers.next().unwrap().into())
+            });
+            assert_eq!(result.is_ok(), succeeds);
+            if !succeeds {
+                assert!(matches!(result, Err(Error::Mismatch)));
+            }
+            assert_eq!(prompts.len(), calls);
+            assert_eq!(prompts[0], "Password: ");
+            if confirm {
+                assert_eq!(prompts[1], "Confirm password: ");
+            }
+        }
+        assert!(matches!(
+            prompt_with(true, |_| Err(io::Error::other("read failed"))),
+            Err(Error::Io(_))
+        ));
+    }
+
     #[test]
     fn strips_exactly_one_line_ending() {
         for (input, expected) in [

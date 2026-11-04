@@ -40,10 +40,13 @@ pub struct Repository<B> {
 }
 
 impl<B: Backend> Repository<B> {
+    /// Config wins the create-once race before any slot is stored.
+    /// A crash before the slot write leaves an unusable empty repository; delete
+    /// that directory before retrying init. Existing repositories are never reset.
     pub fn init(backend: B, secret: &Secret) -> Result<Self, Error> {
         for kind in Kind::ALL {
             if !backend.list(kind)?.is_empty() || !backend.list_foreign(kind)?.is_empty() {
-                return Err(Error::Refused("repository is not empty".into()));
+                return Err(Error::Refused("repository is not empty; to discard an incomplete init, delete the directory and retry".into()));
             }
         }
         let master = MasterKey::generate()?;
@@ -53,11 +56,11 @@ impl<B: Backend> Repository<B> {
             config,
             master,
         };
-        repo.add_key(secret)?;
         let bytes = serde_json::to_vec(&repo.config)?;
         let encrypted = envelope::seal(&repo.master.subkeys().encryption, Label::Config, &bytes)?;
         repo.backend
             .write(&ObjectName::new("config")?, &encrypted)?;
+        repo.add_key(secret)?;
         Ok(repo)
     }
 

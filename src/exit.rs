@@ -17,9 +17,47 @@ pub const fn code(result: Result<(), Failure>) -> u8 {
     }
 }
 
+/// Classify typed causes even when callers add context or wrap an error.
+pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
+    let mut current = Some(error);
+    while let Some(cause) = current {
+        if matches!(
+            cause.downcast_ref::<crate::secret::Error>(),
+            Some(crate::secret::Error::ConflictingSources)
+        ) {
+            return Failure::Usage;
+        }
+        if matches!(
+            cause.downcast_ref::<crate::repo::Error>(),
+            Some(crate::repo::Error::Damage { .. })
+        ) {
+            return Failure::Damage;
+        }
+        current = cause.source();
+    }
+    Failure::Error
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn classifies_contextual_error_chains() {
+        let usage =
+            anyhow::Error::new(crate::secret::Error::ConflictingSources).context("loading secret");
+        assert_eq!(failure(usage.as_ref()), Failure::Usage);
+        let damaged = anyhow::Error::new(crate::repo::Error::Damage {
+            object: "config".into(),
+            problem: "bad-format",
+            detail: "test".into(),
+        })
+        .context("opening repository");
+        assert_eq!(failure(damaged.as_ref()), Failure::Damage);
+        let wrong =
+            anyhow::Error::new(crate::repo::Error::WrongSecret).context("opening repository");
+        assert_eq!(failure(wrong.as_ref()), Failure::Error);
+    }
+
     #[test]
     fn maps_all_outcomes() {
         assert_eq!(code(Ok(())), 0);

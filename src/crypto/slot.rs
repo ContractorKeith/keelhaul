@@ -61,8 +61,8 @@ pub(crate) fn wrap(
         version: 1,
         kind: secret.kind(),
         created: crate::format::timestamp(),
-        host: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into()),
-        username: std::env::var("USER").unwrap_or_else(|_| "unknown".into()),
+        host: crate::host::hostname(),
+        username: crate::host::username(),
         kdf,
         wrapped: BASE64_STANDARD.encode(envelope::seal(&key, Label::KeySlot, &master.0)?),
     })

@@ -20,6 +20,15 @@ impl LocalBackend {
         })
     }
 
+    /// Open an existing repository without creating any directories.
+    pub fn open(root: impl AsRef<Path>) -> Result<Self, BackendError> {
+        let backend = Self {
+            root: root.as_ref().to_path_buf(),
+        };
+        backend.stat(&ObjectName::new("config")?)?;
+        Ok(backend)
+    }
+
     fn path(&self, name: &ObjectName) -> PathBuf {
         self.root.join(name.as_str())
     }

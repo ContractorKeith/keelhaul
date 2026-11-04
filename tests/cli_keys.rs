@@ -14,13 +14,13 @@ fn cli(root: &Path, source: &[&str], args: &[&str], new_password: Option<&Path>)
         "KEELHAUL_PASSWORD_COMMAND",
         "KEELHAUL_KEY_FILE",
         "KEELHAUL_NEW_PASSWORD_FILE",
+        "HOSTNAME",
+        "USER",
     ] {
         command.env_remove(name);
     }
     command
         .env("HOME", root)
-        .env("USER", "test-user")
-        .env("HOSTNAME", "test-host")
         .arg("-r")
         .arg(root.join("repo"))
         .args(source)
@@ -55,11 +55,12 @@ fn password_to_keyfile_rotation_and_json_contract() {
     let slot = &listed["slots"][0];
     let original_id = slot["id"].as_str().unwrap();
     assert_eq!(listed["slots"].as_array().unwrap().len(), 1);
+    assert!(!slot["username"].as_str().unwrap().is_empty());
     let created = slot["created"].as_str().unwrap();
     assert_eq!(created.len(), 30);
     assert_eq!(
         listed,
-        json!({"slots":[{"id":original_id,"kind":"password","created":created,"host":"test-host","username":"test-user"}]})
+        json!({"slots":[{"id":original_id,"kind":"password","created":created,"host":gethostname::gethostname().to_string_lossy(),"username":keelhaul::host::username()}]})
     );
     let key = root.join("new-key");
     let added = success(cli(
@@ -191,4 +192,27 @@ fn keyfile_init_and_invalid_secret_files() {
         .code(),
         Some(1)
     );
+}
+
+#[test]
+fn missing_repository_is_reported_without_creating_directory() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    for exists in [false, true] {
+        if exists {
+            fs::create_dir(root.join("repo")).unwrap();
+        }
+        let output = cli(
+            root,
+            &["--password-command", "printf pw"],
+            &["key", "list"],
+            None,
+        );
+        assert_eq!(output.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+            "repository not found: {}",
+            root.join("repo").display()
+        )));
+        assert_eq!(root.join("repo").exists(), exists);
+    }
 }

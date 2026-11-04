@@ -13,3 +13,6 @@ pub mod format;
 pub mod ops;
 pub mod repo;
 pub mod secret;
+
+pub mod cli;
+pub mod host;
