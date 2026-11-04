@@ -132,3 +132,36 @@ pub fn run(config: &Path, root: &str) {
         ));
     }
 }
+
+pub fn object_types_and_listing_context(config: &Path, root: &str) {
+    let root = format!("{root}-object-types");
+    let backend = backend(config, &root);
+    for raw in ["config".to_owned(), format!("data/ab/{}", "ab".repeat(32))] {
+        let path = format!("{root}/{raw}");
+        remote(&["mkdir", "-p", &path]);
+        let name = ObjectName::new(&raw).unwrap();
+        for result in [
+            backend.read(&name).map(|_| ()),
+            backend.read_range(&name, 0, 0).map(|_| ()),
+            backend.stat(&name).map(|_| ()),
+            backend.write(&name, b""),
+        ] {
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains(&path), "{error}");
+            assert!(
+                matches!(error,BackendError::Io { name:Some(object),path:Some(actual),.. } if object == name && actual == Path::new(&path))
+            );
+        }
+        assert!(backend.list(name.kind()).unwrap().is_empty());
+    }
+    let shard = format!("{root}/data/cd");
+    remote(&["mkdir", &shard]);
+    remote(&["chmod", "000", &shard]);
+    let error = backend.list(Kind::Data).unwrap_err();
+    // Restore the fixture before inspecting assertions, so later cleanup is possible.
+    remote(&["chmod", "755", &shard]);
+    assert!(error.to_string().contains("data/cd"), "{error}");
+    assert!(
+        matches!(error,BackendError::Io { path:Some(path),source,.. } if path == Path::new(&shard) && source.kind() == std::io::ErrorKind::PermissionDenied)
+    );
+}

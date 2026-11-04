@@ -186,3 +186,25 @@ fn sftp_pipelined_read_status_errors_drain_pending_responses() {
     client.close(b"h").unwrap();
     assert_eq!(client.pid(), pid);
 }
+
+#[test]
+fn sftp_directories_cannot_be_objects() {
+    use crate::backend::{Backend, BackendError, ObjectName};
+    let scratch = tempfile::tempdir().unwrap();
+    let log = scratch.path().join("requests");
+    let backend =
+        super::SftpBackend::with_client("/repo".into(), logged_fake("backend-directory", &log))
+            .unwrap();
+    let name = ObjectName::new("config").unwrap();
+    for result in [
+        backend.read(&name).map(|_| ()),
+        backend.stat(&name).map(|_| ()),
+        backend.write(&name, b""),
+    ] {
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error,BackendError::Io { path:Some(path),.. } if path.to_str() == Some("/repo/config")),
+            "{error}"
+        );
+    }
+}

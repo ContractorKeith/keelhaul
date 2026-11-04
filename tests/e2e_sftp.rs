@@ -83,6 +83,7 @@ fn sftp_e2e_conformance_and_failures() {
         ));
 
     links::run(&config_path, &root);
+    links::object_types_and_listing_context(&config_path, &root);
 
     // Independent connections also obey create-once publication.
     let other = SftpBackend::with_client(root.clone(), connect(&config_path, &root)).unwrap();

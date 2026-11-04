@@ -4,6 +4,7 @@ mod codec;
 mod operations;
 mod response;
 mod scan;
+mod ssh;
 mod status;
 mod stderr;
 #[cfg(test)]
@@ -119,11 +120,8 @@ impl Backend for SftpBackend {
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError> {
         let path = self.path(name.as_str());
         let mut client = self.client()?;
-        let result = client
-            .attrs(&path)
-            .and_then(|a| a.size.ok_or_else(|| codec::invalid("missing size")));
         client
-            .finish(result)
+            .object_size(&path)
             .map_err(|e| object_error(name, Path::new(&path), e))
     }
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError> {

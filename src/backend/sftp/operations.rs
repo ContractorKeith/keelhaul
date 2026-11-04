@@ -31,6 +31,10 @@ impl Client {
     pub fn lstat(&mut self, path: &str) -> io::Result<Attrs> {
         self.attributes(7, path.as_bytes())
     }
+    pub(super) fn object_size(&mut self, path: &str) -> io::Result<u64> {
+        let result = self.attrs(path).and_then(|attrs| attrs.regular_size());
+        self.finish(result)
+    }
     pub fn fstat(&mut self, handle: &[u8]) -> io::Result<Attrs> {
         self.attributes(8, handle)
     }
@@ -159,6 +163,8 @@ impl Client {
         close
     }
     pub fn read_file(&mut self, path: &str, offset: u64, len: u64) -> io::Result<Vec<u8>> {
+        // Reject special files before OPEN; a FIFO could otherwise block the server.
+        self.object_size(path)?;
         let handle = self.open(path, 1)?;
         self.read_open(handle, offset, len)
     }
@@ -181,14 +187,19 @@ impl Client {
         Ok(Some(handle))
     }
     pub fn matches_file(&mut self, path: &str, bytes: &[u8]) -> io::Result<Option<bool>> {
+        let size = match self.object_size(path) {
+            Ok(size) => size,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if size != bytes.len() as u64 {
+            return Ok(Some(false));
+        }
         let Some(handle) = self.open_optional(path)? else {
             return Ok(None);
         };
         let result = (|| {
-            let size = self
-                .fstat(&handle)?
-                .size
-                .ok_or_else(|| codec::invalid("missing file size"))?;
+            let size = self.fstat(&handle)?.regular_size()?;
             if size != bytes.len() as u64 {
                 return Ok(false);
             }
@@ -202,10 +213,7 @@ impl Client {
     }
     fn read_open(&mut self, handle: Vec<u8>, offset: u64, len: u64) -> io::Result<Vec<u8>> {
         let result = (|| {
-            let size = self
-                .fstat(&handle)?
-                .size
-                .ok_or_else(|| codec::invalid("missing file size"))?;
+            let size = self.fstat(&handle)?.regular_size()?;
             self.read_handle(
                 &handle,
                 offset.min(size),

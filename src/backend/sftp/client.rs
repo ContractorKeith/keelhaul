@@ -43,14 +43,9 @@ impl Client {
         executable: impl AsRef<std::ffi::OsStr>,
         args: &[String],
     ) -> io::Result<Self> {
-        let mut command = Command::new(executable);
-        command.args(args);
-        if let Some(port) = url.port {
-            command.args(["-p", &port.to_string()]);
-        }
-        command.arg(&url.host).args(["-s", "sftp"]);
-        Self::spawn(command)
+        Self::spawn(super::ssh::command(url, executable, args))
     }
+
     pub(super) fn spawn(mut command: Command) -> io::Result<Self> {
         let mut child = command
             .stdin(Stdio::piped())

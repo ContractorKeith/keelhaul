@@ -3,7 +3,10 @@ use super::{
 };
 use crate::backend::{BackendError, ForeignEntry, Kind, ObjectName, foreign, valid_hex};
 use std::{
+    ffi::OsStr,
     io,
+    os::unix::ffi::OsStrExt,
+    path::Path,
     time::{Duration, UNIX_EPOCH},
 };
 pub(super) struct ScannedEntry {
@@ -39,7 +42,7 @@ fn record(
     });
     Ok(())
 }
-fn children(
+fn children_inner(
     client: &mut Client,
     path: &str,
     raw: &str,
@@ -70,6 +73,24 @@ fn children(
         Err(error) => Err(error),
     }
 }
+fn finish_at<T>(
+    client: &mut Client,
+    path: &[u8],
+    result: io::Result<T>,
+) -> Result<T, BackendError> {
+    client.finish(result).map_err(|error| {
+        BackendError::from(error).context(None, Some(Path::new(OsStr::from_bytes(path))))
+    })
+}
+fn children(
+    client: &mut Client,
+    path: &str,
+    raw: &str,
+    entries: &mut Vec<ScannedEntry>,
+) -> Result<Vec<DirectoryEntry>, BackendError> {
+    let result = children_inner(client, path, raw, entries);
+    finish_at(client, path.as_bytes(), result)
+}
 // READDIR describes the link itself. Follow only links at fixed layout depths.
 fn resolve(client: &mut Client, path: &[u8], attrs: Attrs) -> io::Result<(Attrs, bool)> {
     if file_type(&attrs) != Some(0o120000) {
@@ -84,10 +105,13 @@ fn resolve(client: &mut Client, path: &[u8], attrs: Attrs) -> io::Result<(Attrs,
 impl SftpBackend {
     pub(super) fn scan(&self, kind: Kind) -> Result<Vec<ScannedEntry>, BackendError> {
         let mut client = self.client()?;
-        let result = self.scan_with(&mut client, kind);
-        client.finish(result).map_err(BackendError::from)
+        self.scan_with(&mut client, kind)
     }
-    fn scan_with(&self, client: &mut Client, kind: Kind) -> io::Result<Vec<ScannedEntry>> {
+    fn scan_with(
+        &self,
+        client: &mut Client,
+        kind: Kind,
+    ) -> Result<Vec<ScannedEntry>, BackendError> {
         let mut result = Vec::new();
         let mut directories = vec![kind.directory().to_owned()];
         if kind == Kind::Data {
@@ -100,9 +124,12 @@ impl SftpBackend {
                     continue;
                 }
                 let raw = format!("data/{shard}");
-                let (attrs, live) = resolve(client, self.path(&raw).as_bytes(), entry.attrs)?;
+                let path = self.path(&raw);
+                let resolved = resolve(client, path.as_bytes(), entry.attrs);
+                let (attrs, live) = finish_at(client, path.as_bytes(), resolved)?;
                 if !live {
-                    record(raw, attrs, false, &mut result)?;
+                    let recorded = record(raw, attrs, false, &mut result);
+                    finish_at(client, path.as_bytes(), recorded)?;
                 } else if file_type(&attrs) == Some(0o040000) {
                     directories.push(raw);
                 }
@@ -132,11 +159,13 @@ impl SftpBackend {
                     path.push(b'/');
                 }
                 path.extend_from_slice(&entry.name);
-                let (attrs, live) = resolve(client, &path, entry.attrs)?;
+                let resolved = resolve(client, &path, entry.attrs);
+                let (attrs, live) = finish_at(client, &path, resolved)?;
                 if live && file_type(&attrs) != Some(0o100000) {
                     continue;
                 }
-                record(raw, attrs, live && lossless, &mut result)?;
+                let recorded = record(raw, attrs, live && lossless, &mut result);
+                finish_at(client, &path, recorded)?;
             }
         }
         result.sort_by(|a, b| a.foreign.raw.cmp(&b.foreign.raw));

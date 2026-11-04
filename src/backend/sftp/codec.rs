@@ -88,6 +88,15 @@ pub struct Attrs {
     pub modified: Option<u32>,
 }
 impl Attrs {
+    pub(super) fn regular_size(&self) -> io::Result<u64> {
+        let mode = self
+            .permissions
+            .ok_or_else(|| invalid("missing file type"))?;
+        if mode & 0o170000 != 0o100000 {
+            return Err(io::Error::other("object is not a regular file"));
+        }
+        self.size.ok_or_else(|| invalid("missing file size"))
+    }
     pub fn decode(fields: &mut Fields<'_>) -> io::Result<Self> {
         let flags = fields.u32()?;
         if flags & !0x8000000f != 0 {

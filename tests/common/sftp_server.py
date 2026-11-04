@@ -39,8 +39,10 @@ while True:
             elif t == 4: status(i)
             else: status(i,2)
             continue
+        if mode == 'backend-directory' and t in (7,8,17):
+            packet(105,i+u32(5)+struct.pack('>Q',0)+u32(0o040755)); continue
         if t in (7,17):
-            packet(105,i+u32(1)+struct.pack('>Q',131072)); continue
+            packet(105,i+u32(5)+struct.pack('>Q',131072)+u32(0o100600)); continue
         if t == 3:
             packet(102,i+string(b'h')); continue
     if mode == 'malformed':
@@ -52,9 +54,9 @@ while True:
     if t == 3:
         assert b == string(b'/file')+u32(1)+u32(0)
         packet(102,i+string(b'h'))
-    elif t == 8:
-        assert b == string(b'h')
-        packet(105,i+u32(1)+struct.pack('>Q',131072))
+    elif t in (8,17):
+        assert b == (string(b'h') if t == 8 else string(b'/file'))
+        packet(105,i+u32(5)+struct.pack('>Q',131072)+u32(0o100600))
     elif t == 5:
         assert b[:5] == string(b'h')
         offset,count = struct.unpack('>QI',b[5:])
