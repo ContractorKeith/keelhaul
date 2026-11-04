@@ -26,9 +26,29 @@ pub struct SftpBackend {
 }
 impl SftpBackend {
     pub fn new(url: &str) -> Result<Self, BackendError> {
-        let url = SftpUrl::parse(url)?;
+        let url = parse_url(url)?;
         let client = Client::connect(&url)?;
         Self::with_client(url.path, client)
+    }
+    pub fn open(url: &str) -> Result<Self, BackendError> {
+        let url = parse_url(url)?;
+        let mut client = Client::connect(&url)?;
+        let result = client.attrs(&url.path);
+        let attrs =
+            result.map_err(|e| BackendError::from(e).context(None, Some(Path::new(&url.path))))?;
+        if !attrs
+            .permissions
+            .is_some_and(|mode| mode & 0o170000 == 0o040000)
+        {
+            return Err(
+                BackendError::from(io::Error::other("repository path is not a directory"))
+                    .context(None, Some(Path::new(&url.path))),
+            );
+        }
+        Ok(Self {
+            root: url.path.trim_end_matches('/').into(),
+            client: Mutex::new(client),
+        })
     }
     pub fn with_client(root: String, mut client: Client) -> Result<Self, BackendError> {
         client.mkdir_all(&root)?;
@@ -157,4 +177,8 @@ impl Backend for SftpBackend {
             .map(|entry| entry.foreign)
             .collect())
     }
+}
+
+fn parse_url(url: &str) -> Result<SftpUrl, BackendError> {
+    SftpUrl::parse(url).map_err(|_| BackendError::InvalidConfig("invalid SFTP repository URL"))
 }

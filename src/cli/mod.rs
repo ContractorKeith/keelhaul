@@ -6,9 +6,14 @@ pub use commands::run;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "keelhaul", version, about, after_help = "SSH environment:
+#[command(
+    name = "keelhaul",
+    version,
+    about,
+    after_help = "SSH environment:
   KEELHAUL_SSH_ARGS     Shell-style extra ssh arguments. Defaults: ServerAliveInterval=15, ServerAliveCountMax=4 (dead links exit after about 60 seconds), BatchMode=yes (no password prompts). Explicit -o arguments come first and override these defaults.
-  KEELHAUL_SSH_COMMAND  Executable to use instead of ssh.")]
+  KEELHAUL_SSH_COMMAND  Executable to use instead of ssh."
+)]
 pub struct Cli {
     /// Repository path, sftp:[user@]host:/path, or s3:https://host/bucket[/prefix].
     /// S3 bucket is the first path segment; endpoint path prefixes are unsupported.

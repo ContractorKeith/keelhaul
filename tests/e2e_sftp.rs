@@ -3,6 +3,11 @@
 mod backend_edges;
 #[path = "common/backend_suite.rs"]
 mod backend_suite;
+#[path = "common/sftp_cli.rs"]
+mod cli_tests;
+#[path = "common/docker.rs"]
+mod docker;
+use docker::{compose, run};
 #[path = "common/e2e_sftp_links.rs"]
 mod links;
 use keelhaul::backend::{
@@ -12,23 +17,10 @@ use keelhaul::backend::{
 use std::{
     fs,
     path::Path,
-    process::{Command, Output},
+    process::Command,
     time::{Duration, Instant},
 };
 
-fn run(command: &mut Command) -> Output {
-    let output = command.output().expect("execute test command");
-    assert!(
-        output.status.success(),
-        "{command:?}: {}\n{}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-    output
-}
-fn compose(args: &[&str]) {
-    run(Command::new("docker").args(["compose"]).args(args));
-}
 fn connect(config: &Path, root: &str) -> Client {
     Client::connect_with(
         &SftpUrl::parse(&format!("sftp:keelhaul-e2e:{root}")).unwrap(),
@@ -46,11 +38,11 @@ fn config(scratch: &Path, hosts: &Path) -> String {
 }
 #[test]
 fn sftp_e2e_conformance_and_failures() {
-    if std::env::var("KEELHAUL_E2E").as_deref() != Ok("1") {
+    if !docker::enabled() {
         return;
     }
     // A requested run against a stopped container must fail before fixture setup.
-    compose(&["exec", "-T", "sshd", "true"]);
+    docker::require_sshd();
     let scratch = tempfile::tempdir().unwrap();
     run(Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -82,6 +74,7 @@ fn sftp_e2e_conformance_and_failures() {
             format!("-F {}", shell_words::quote(&config_path.to_string_lossy())),
         ));
 
+    cli_tests::run(&config_path, &root, scratch.path());
     links::run(&config_path, &root);
     links::object_types_and_listing_context(&config_path, &root);
 
