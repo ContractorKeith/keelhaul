@@ -19,7 +19,13 @@ impl<B: Backend> BlobStore<'_, B> {
             .backend
             .read_range(&name, loc.blob.offset, loc.blob.length)
             .map_err(|e| missing(&name, e))?;
-        crate::repo::audit::blob(&self.repo.master.subkeys(), id, &loc.blob, &stored)
+        crate::repo::audit::blob(
+            &self.repo.master.subkeys(),
+            id,
+            name.as_str(),
+            &loc.blob,
+            &stored,
+        )
     }
 
     fn verify_pack(&mut self, id: &str) -> Result<(), Error> {

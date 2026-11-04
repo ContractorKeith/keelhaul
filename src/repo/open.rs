@@ -104,6 +104,7 @@ impl<B: Backend> Repository<B> {
         let total = entries.len();
         let mut unreadable = Vec::new();
         let mut master = None;
+        let mut bad_check = None;
         for entry in entries {
             let bytes = backend.read(&entry.name)?;
             // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
@@ -111,12 +112,19 @@ impl<B: Backend> Repository<B> {
                 unreadable.push(entry.name.to_string());
                 continue;
             };
-            if let Ok(key) = slot::unwrap(&slot, secret) {
-                master = Some(key);
-                break;
+            match slot::unwrap(&slot, secret) {
+                Ok(key) => {
+                    master = Some(key);
+                    break;
+                }
+                Err(slot::Error::CheckMismatch) => bad_check = Some(entry.name.to_string()),
+                Err(_) => {}
             }
         }
         master.ok_or_else(|| {
+            if let Some(object) = bad_check {
+                return damage(&object, "hash-mismatch", "key slot check differs");
+            }
             if unreadable.is_empty() {
                 Error::WrongSecret
             } else {

@@ -13,6 +13,10 @@ pub(super) fn validate(raw: &str) -> Result<Kind, BackendError> {
         return Err(invalid());
     }
     let parts: Vec<_> = raw.split('/').collect();
+    // Direct data children may be shard directories: discovery does not grant deletion.
+    if matches!(parts.as_slice(), ["data", _]) {
+        return Err(invalid());
+    }
     if parts.iter().any(|part| part.is_empty() || *part == ".") {
         return Err(invalid());
     }
@@ -35,6 +39,7 @@ pub(super) fn position(raw: &str) -> Option<Kind> {
         ["index", _] => Some(Kind::Index),
         ["snapshots", _] => Some(Kind::Snapshots),
         ["locks", _] => Some(Kind::Locks),
+        ["data", _] => Some(Kind::Data),
         ["data", shard, _] if super::valid_hex(shard, 2) => Some(Kind::Data),
         _ => None,
     }

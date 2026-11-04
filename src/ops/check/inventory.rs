@@ -7,14 +7,28 @@ use crate::{
 
 pub(super) fn scan<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
     let config = ObjectName::new("config")?;
-    let result = audit::read(state.backend, &config)
-        .and_then(|bytes| audit::open(&state.keys, "config", Label::Config, &bytes))
-        .and_then(|bytes| Config::parse(&bytes).map_err(|e| bad("config", &e)));
+    let config_exists = state
+        .backend
+        .list(Kind::Config)?
+        .iter()
+        .any(|e| e.name == config);
+    let result = (if config_exists {
+        audit::read(state.backend, &config)
+    } else {
+        Err(Error::Damage {
+            object: "config".into(),
+            problem: "missing",
+            detail: "config is missing".into(),
+        })
+    })
+    .and_then(|bytes| audit::open(&state.keys, "config", Label::Config, &bytes))
+    .and_then(|bytes| Config::parse(&bytes).map_err(|e| bad("config", &e)));
     state.report.collect(result)?;
     for kind in Kind::ALL {
         for foreign in state.backend.list_foreign(kind)? {
-            // Includes partial uploads as informational notes, never damage.
-            state.report.note(&foreign.raw, "unknown", "unknown-object");
+            if !temporary(&foreign.raw) {
+                state.report.note(&foreign.raw, "unknown", "unknown-object");
+            }
         }
         if kind == Kind::Config {
             continue;
@@ -31,7 +45,15 @@ pub(super) fn scan<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
             }
             if kind == Kind::Keys {
                 let result = audit::read(state.backend, name)
-                    .and_then(|b| KeySlot::parse(&b).map_err(|e| bad(name.as_str(), &e)));
+                    .and_then(|b| KeySlot::parse(&b).map_err(|e| bad(name.as_str(), &e)))
+                    .and_then(|slot| {
+                        crate::crypto::slot::verify_check(&slot, &state.keys.key_slot_check)
+                            .map_err(|e| Error::Damage {
+                                object: name.to_string(),
+                                problem: "hash-mismatch",
+                                detail: e.to_string(),
+                            })
+                    });
                 state.report.collect(result)?;
                 continue;
             }
@@ -162,4 +184,13 @@ pub(super) fn bad(object: &str, detail: &str) -> Error {
         problem: "bad-format",
         detail: detail.into(),
     }
+}
+
+fn temporary(raw: &str) -> bool {
+    raw.rsplit_once(".tmp-").is_some_and(|(_, suffix)| {
+        suffix.len() == 16
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
 }

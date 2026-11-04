@@ -3,11 +3,10 @@ use crate::ops::listing::damage;
 use crate::{
     backend::Backend,
     format::{
-        pack::BlobKind,
         snapshot::{Snapshot, decode_root},
-        tree::{Entry, Node, Tree},
+        tree::{Entry, Node},
     },
-    repo::{Error, blobs::BlobStore},
+    repo::{Error, blobs::BlobStore, trees::TreeCache},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -25,6 +24,7 @@ struct Planner<'a> {
     includes: Vec<PathBuf>,
     matched: HashSet<PathBuf>,
     active: HashSet<String>,
+    cache: TreeCache,
     items: Vec<Item>,
     report: &'a mut Report,
 }
@@ -66,9 +66,7 @@ impl Planner<'_> {
                         self.report.damage(damage(&id, "tree names an ancestor"))?;
                         continue;
                     }
-                    let parsed = store.read(BlobKind::Tree, &id).and_then(|bytes| {
-                        Tree::salvage(&bytes).map_err(|e| damage(&id, &e.to_string()))
-                    });
+                    let parsed = self.cache.salvage(store, &id);
                     let (tree, problems) = match parsed {
                         Ok(t) => t,
                         Err(e) => {
@@ -84,7 +82,7 @@ impl Planner<'_> {
                     }
                     self.active.insert(id.clone());
                     work.push(Work::Leave(id.clone()));
-                    for entry in tree.entries.into_iter().rev() {
+                    for entry in tree.entries.iter().rev().cloned() {
                         work.push(Work::Entry {
                             entry,
                             base: base.clone(),
@@ -187,6 +185,7 @@ pub(super) fn build<B: Backend>(
         includes: normalized,
         matched: HashSet::new(),
         active: HashSet::new(),
+        cache: TreeCache::default(),
         items: Vec::new(),
         report,
     };

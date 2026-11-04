@@ -96,22 +96,37 @@ pub(crate) fn header<B: Backend>(
 pub(crate) fn blob(
     keys: &Subkeys,
     object: &str,
+    pack: &str,
     blob: &Blob,
     stored: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    if stored.len() as u64 != blob.length {
-        return Err(damage(object, "truncated", "blob range is short"));
-    }
-    let payload = open(keys, object, blob.kind.label(), stored)?;
-    if payload.len() as u64 != blob.raw_length {
-        return Err(damage(object, "size-mismatch", "blob raw length differs"));
-    }
-    if blake3::keyed_hash(&keys.chunk_id, &payload)
-        .to_hex()
-        .as_str()
-        != blob.id
-    {
-        return Err(damage(object, "hash-mismatch", "blob keyed ID differs"));
-    }
-    Ok(payload)
+    let result = (|| {
+        if stored.len() as u64 != blob.length {
+            return Err(damage(object, "truncated", "blob range is short"));
+        }
+        let payload = open(keys, object, blob.kind.label(), stored)?;
+        if payload.len() as u64 != blob.raw_length {
+            return Err(damage(object, "size-mismatch", "blob raw length differs"));
+        }
+        if blake3::keyed_hash(&keys.chunk_id, &payload)
+            .to_hex()
+            .as_str()
+            != blob.id
+        {
+            return Err(damage(object, "hash-mismatch", "blob keyed ID differs"));
+        }
+        Ok(payload)
+    })();
+    result.map_err(|error| match error {
+        Error::Damage {
+            object,
+            problem,
+            detail,
+        } => Error::Damage {
+            object,
+            problem,
+            detail: format!("{detail}; pack {pack}"),
+        },
+        other => other,
+    })
 }

@@ -30,7 +30,7 @@ fn record(
     entries.push(ScannedEntry {
         object,
         foreign: ForeignEntry {
-            deletable: foreign::validate(&raw).is_ok(),
+            deletable: foreign::validate(&raw).is_ok() && file_type(&attrs) != Some(0o040000),
             raw,
             size: attrs
                 .size
@@ -117,21 +117,25 @@ impl SftpBackend {
         if kind == Kind::Data {
             directories.clear();
             for entry in children(client, &self.path("data"), "data", &mut result)? {
-                let Ok(shard) = std::str::from_utf8(&entry.name) else {
-                    continue;
-                };
-                if !valid_hex(shard, 2) {
+                if entry.name == b"."
+                    || entry.name == b".."
+                    || entry.name.contains(&b'/')
+                    || entry.name.contains(&0)
+                {
                     continue;
                 }
+                let shard = String::from_utf8_lossy(&entry.name);
                 let raw = format!("data/{shard}");
-                let path = self.path(&raw);
-                let resolved = resolve(client, path.as_bytes(), entry.attrs);
-                let (attrs, live) = finish_at(client, path.as_bytes(), resolved)?;
-                if !live {
-                    let recorded = record(raw, attrs, false, &mut result);
-                    finish_at(client, path.as_bytes(), recorded)?;
-                } else if file_type(&attrs) == Some(0o040000) {
+                let mut path = self.path("data").into_bytes();
+                path.push(b'/');
+                path.extend(&entry.name);
+                let resolved = resolve(client, &path, entry.attrs);
+                let (attrs, live) = finish_at(client, &path, resolved)?;
+                if live && valid_hex(&shard, 2) && file_type(&attrs) == Some(0o040000) {
                     directories.push(raw);
+                } else {
+                    let recorded = record(raw, attrs, false, &mut result);
+                    finish_at(client, &path, recorded)?;
                 }
             }
         }
@@ -161,10 +165,17 @@ impl SftpBackend {
                 path.extend_from_slice(&entry.name);
                 let resolved = resolve(client, &path, entry.attrs);
                 let (attrs, live) = finish_at(client, &path, resolved)?;
-                if live && file_type(&attrs) != Some(0o100000) {
+                if kind == Kind::Config
+                    && file_type(&attrs) == Some(0o040000)
+                    && matches!(
+                        raw.as_str(),
+                        "keys" | "data" | "index" | "snapshots" | "locks"
+                    )
+                {
                     continue;
                 }
-                let recorded = record(raw, attrs, live && lossless, &mut result);
+                let regular = file_type(&attrs) == Some(0o100000);
+                let recorded = record(raw, attrs, live && lossless && regular, &mut result);
                 finish_at(client, &path, recorded)?;
             }
         }

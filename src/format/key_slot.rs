@@ -58,6 +58,7 @@ pub struct KeySlot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) kdf: Option<Kdf>,
     pub(crate) wrapped: String,
+    pub(crate) check: String,
 }
 
 impl KeySlot {
@@ -79,6 +80,9 @@ impl KeySlot {
             .map_err(|e| e.to_string())?;
         if wrapped.len() != 72 {
             return Err("invalid wrapped master key length".into());
+        }
+        if !super::valid_id(&slot.check) {
+            return Err("invalid key slot check".into());
         }
         Ok(slot)
     }

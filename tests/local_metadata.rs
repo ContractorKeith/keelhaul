@@ -101,7 +101,10 @@ fn foreign_deletion_refuses_nested_symlink_paths() {
         fs::read(outside.path().join("unknown")).unwrap(),
         b"preserve"
     );
-    assert!(b.list_foreign(Kind::Keys).unwrap().is_empty());
+    let foreign = b.list_foreign(Kind::Keys).unwrap();
+    assert_eq!(foreign.len(), 1);
+    assert_eq!(foreign[0].raw, "keys/link");
+    assert!(!foreign[0].deletable);
 }
 
 #[test]

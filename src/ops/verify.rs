@@ -30,6 +30,9 @@ impl std::str::FromStr for Subset {
 }
 impl Subset {
     pub fn contains(&self, id: &str) -> bool {
+        if !crate::format::valid_id(id) {
+            return self.n == 1;
+        }
         id.get(..32)
             .and_then(|p| u128::from_str_radix(p, 16).ok())
             .is_some_and(|v| v % self.m == self.n - 1)
@@ -83,7 +86,17 @@ fn run<B: Backend>(mut state: State<'_, B>, subset: Option<Subset>) -> Result<Re
             }
         }
         if let Some(indexed) = indexed {
-            blobs.extend(indexed.iter().map(|(key, blob)| (*key, *blob)));
+            if header.is_none() {
+                blobs.extend(indexed.iter().map(|(key, blob)| (*key, *blob)));
+            } else {
+                // A valid header is authoritative. A bad cached descriptor is
+                // index damage, not proof that the stored blob is corrupt.
+                for (key, blob) in indexed {
+                    if !blobs.contains_key(key) {
+                        state.bad.insert((blob.kind, blob.id.clone()));
+                    }
+                }
+            }
         }
         for blob in blobs.into_values() {
             let stored = blob
@@ -95,18 +108,26 @@ fn run<B: Backend>(mut state: State<'_, B>, subset: Option<Subset>) -> Result<Re
                     bytes.get(start..end)
                 })
                 .unwrap_or(&[]);
-            let result = audit::blob(&state.keys, &blob.id, blob, stored).and_then(|bytes| {
-                if blob.kind == crate::format::pack::BlobKind::Tree {
+            let result = audit::blob(&state.keys, &blob.id, name.as_str(), blob, stored);
+            let valid = if blob.kind == BlobKind::Tree {
+                let parsed = result.and_then(|bytes| {
                     crate::format::tree::Tree::parse(&bytes).map_err(|e| Error::Damage {
                         object: blob.id.clone(),
                         problem: "bad-format",
-                        detail: e.to_string(),
-                    })?;
-                }
-                Ok(bytes)
-            });
+                        detail: format!("{e}; pack {name}"),
+                    })
+                });
+                let tree = state.report.collect(parsed)?.map(std::rc::Rc::new);
+                let valid = tree.is_some();
+                state
+                    .tree_cache
+                    .insert(super::check::tree_key(id, blob), tree);
+                valid
+            } else {
+                state.report.collect(result)?.is_some()
+            };
             let key = (blob.kind, blob.id.clone());
-            if state.report.collect(result)?.is_some() {
+            if valid {
                 if indexed.is_some_and(|v| v.contains_key(&descriptor(blob))) {
                     good.insert(key);
                 }

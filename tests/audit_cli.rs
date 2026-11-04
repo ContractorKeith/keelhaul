@@ -33,6 +33,7 @@ fn golden_audit_documents_and_usage_errors() {
     fs::create_dir_all(repo.join("index")).unwrap();
     fs::write(repo.join("index").join("0".repeat(64)), b"invalid").unwrap();
     fs::write(repo.join("config.tmp-0123456789abcdef"), b"unfinished").unwrap();
+    fs::write(repo.join("config.unknown"), b"foreign").unwrap();
     for command in ["check", "verify"] {
         let out = cli(&repo, &key, &[command]);
         assert_eq!(out.status.code(), Some(3));
@@ -56,6 +57,7 @@ fn damaged_config_has_one_audit_document_and_restore_uses_shared_vocabulary() {
     fs::write(&key, [7; 32]).unwrap();
     assert!(cli(&repo, &key, &["init"]).status.success());
     fs::write(repo.join("config"), b"truncated").unwrap();
+    fs::write(repo.join("config.unknown"), b"foreign").unwrap();
     for command in ["check", "verify"] {
         let out = cli(&repo, &key, &[command]);
         assert_eq!(out.status.code(), Some(3));

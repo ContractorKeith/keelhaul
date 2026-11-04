@@ -79,7 +79,11 @@ pub(super) fn run<B: Backend>(
                 println!("{}", serde_json::to_string(&entries)?);
             } else {
                 for entry in entries {
-                    println!("{}", entry.path);
+                    if entry.shared {
+                        println!("{} [shared subtree]", entry.path);
+                    } else {
+                        println!("{}", entry.path);
+                    }
                 }
             }
         }

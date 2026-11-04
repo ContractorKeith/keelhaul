@@ -19,6 +19,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("secret kind does not match slot")]
     WrongKind,
+    #[error("key slot check differs")]
+    CheckMismatch,
     #[error("{0}")]
     Secret(#[from] crate::secret::Error),
 }
@@ -61,7 +63,7 @@ pub(crate) fn wrap(
     kdf: Option<Kdf>,
 ) -> Result<KeySlot, Error> {
     let key = kek(secret, kdf.as_ref())?;
-    Ok(KeySlot {
+    let mut slot = KeySlot {
         version: 1,
         kind: secret.kind(),
         created: crate::format::timestamp(),
@@ -69,7 +71,10 @@ pub(crate) fn wrap(
         username: crate::host::username(),
         kdf,
         wrapped: BASE64_STANDARD.encode(envelope::seal(&key, Label::KeySlot, &master.0)?),
-    })
+        check: String::new(),
+    };
+    slot.check = check(&slot, &master.subkeys().key_slot_check)?;
+    Ok(slot)
 }
 
 pub fn unwrap(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
@@ -84,5 +89,42 @@ pub fn unwrap(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
     let master = plaintext
         .try_into()
         .map_err(|_| Error::BadFormat("invalid master key length".into()))?;
-    Ok(MasterKey(master))
+    let master = MasterKey(master);
+    verify_check(slot, &master.subkeys().key_slot_check)?;
+    Ok(master)
+}
+
+/// SPEC §3 framing, independent of the secret that wraps this slot.
+pub fn check(slot: &KeySlot, key: &[u8; 32]) -> Result<String, Error> {
+    Ok(check_hash(slot, key)?.to_hex().to_string())
+}
+fn check_hash(slot: &KeySlot, key: &[u8; 32]) -> Result<blake3::Hash, Error> {
+    use crate::format::key_slot::SlotKind;
+    let mut hash = blake3::Hasher::new_keyed(key);
+    hash.update(match slot.kind {
+        SlotKind::Password => b"password",
+        SlotKind::Keyfile => b"keyfile",
+    });
+    hash.update(&[0]);
+    if let Some(kdf) = &slot.kdf {
+        let salt = kdf.validate().map_err(Error::BadFormat)?;
+        for value in [kdf.m_kib, kdf.t, kdf.p] {
+            hash.update(&value.to_le_bytes());
+        }
+        hash.update(&salt);
+    }
+    hash.update(
+        &BASE64_STANDARD
+            .decode(&slot.wrapped)
+            .map_err(|e| Error::BadFormat(e.to_string()))?,
+    );
+    Ok(hash.finalize())
+}
+pub fn verify_check(slot: &KeySlot, key: &[u8; 32]) -> Result<(), Error> {
+    let expected =
+        blake3::Hash::from_hex(&slot.check).map_err(|e| Error::BadFormat(e.to_string()))?;
+    if check_hash(slot, key)? != expected {
+        return Err(Error::CheckMismatch);
+    }
+    Ok(())
 }

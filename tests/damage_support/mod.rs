@@ -16,6 +16,7 @@ use keelhaul::{
 use std::collections::BTreeSet;
 use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
 pub type Objects = BTreeSet<String>;
+pub type Expected = BTreeSet<(String, String, String)>;
 pub struct Fixture {
     pub repo: Repository<MemoryBackend>,
     pub stored: Vec<(String, Vec<u8>)>,
@@ -35,7 +36,9 @@ impl Fixture {
         let key = Secret::KeyFile([7; 32]);
         let mut repo = Repository::init(MemoryBackend::new(), &key).unwrap();
         repo.config.pack_target = 1024 * 1024;
-        let slot = repo.add_key(&Secret::KeyFile([8; 32])).unwrap();
+        let slot = repo
+            .add_key(&Secret::Password("secondary slot".into()))
+            .unwrap();
         for _ in 0..3 {
             backup(&repo, &[source.to_path_buf()], vec![]).unwrap();
         }
@@ -153,6 +156,48 @@ impl Fixture {
             .collect()
     }
 }
-pub fn objects(report: &keelhaul::damage::Report) -> Objects {
-    report.damage.iter().map(|d| d.object.clone()).collect()
+pub fn signature(object: &str, kind: &str, problem: &str) -> (String, String, String) {
+    (object.into(), kind.into(), problem.into())
 }
+pub fn expected(items: impl IntoIterator<Item = (String, String, String)>) -> Expected {
+    items.into_iter().collect()
+}
+pub fn run(f: &Fixture, seed: u64, label: &str, c: Expected, v: Expected) {
+    use keelhaul::ops::{check::check_backend, verify::verify_backend};
+    for (name, result, wanted) in [
+        ("check", check_backend(&f.repo.backend, &f.key), c),
+        ("verify", verify_backend(&f.repo.backend, &f.key, None), v),
+    ] {
+        let report = result.unwrap_or_else(|e| panic!("seed {seed}, corruption {label}: {e}"));
+        for d in &report.damage {
+            if d.kind == "blob"
+                && matches!(
+                    d.problem.as_str(),
+                    "undecryptable" | "hash-mismatch" | "size-mismatch" | "truncated"
+                )
+            {
+                assert!(
+                    d.detail.contains("pack data/"),
+                    "seed {seed}, {label}: blob detail lacks pack: {d:?}"
+                );
+            }
+        }
+        let actual = report
+            .damage
+            .iter()
+            .map(|d| signature(&d.object, &d.kind, &d.problem))
+            .collect::<Expected>();
+        assert_eq!(
+            actual, wanted,
+            "seed {seed}, corruption {label}; {name}: {report:?}"
+        );
+    }
+}
+pub fn file_errors(f: &Fixture, id: &str) -> Expected {
+    f.files_using(id)
+        .iter()
+        .map(|p| signature(p, "file", "dangling-reference"))
+        .collect()
+}
+pub mod authenticated;
+pub mod byte_cases;

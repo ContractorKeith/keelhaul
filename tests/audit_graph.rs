@@ -176,7 +176,7 @@ fn locks_are_hashed_decrypted_and_validated_and_foreign_names_are_notes() {
             .any(|d| d.object == format!("locks/{invalid}") && d.problem == "bad-format")
     );
     assert!(report.notes.iter().all(|n| n.problem == "unknown-object"));
-    assert_eq!(report.notes.len(), 2);
+    assert_eq!(report.notes.len(), 1);
     let lock = repo.backend.list(Kind::Locks).unwrap()[0].name.clone();
     repo.backend.plant_raw(lock.as_str(), b"bad").unwrap();
     assert!(
@@ -186,4 +186,30 @@ fn locks_are_hashed_decrypted_and_validated_and_foreign_names_are_notes() {
             .iter()
             .any(|d| d.object == lock.as_str() && d.problem == "hash-mismatch")
     );
+}
+
+#[test]
+fn stale_tree_descriptor_damages_the_index_not_the_valid_stored_tree() {
+    let repo = repo();
+    let source = tempfile::tempdir().unwrap();
+    std::fs::write(source.path().join("file"), b"good").unwrap();
+    keelhaul::ops::backup::backup(&repo, &[source.path().to_path_buf()], vec![]).unwrap();
+    let name = repo.backend.list(Kind::Index).unwrap()[0].name.clone();
+    let mut value = Index::parse(&repo.read_object(&name, Label::Index).unwrap()).unwrap();
+    value
+        .packs
+        .iter_mut()
+        .flat_map(|p| &mut p.blobs)
+        .find(|b| b.kind == BlobKind::Tree)
+        .unwrap()
+        .raw_length += 1;
+    repo.backend.delete(&name).unwrap();
+    let id = repo
+        .write_object("index", Label::Index, &serde_json::to_vec(&value).unwrap())
+        .unwrap();
+    for report in [check(&repo).unwrap(), verify(&repo, None).unwrap()] {
+        assert_eq!(report.damage.len(), 1, "{report:?}");
+        assert_eq!(report.damage[0].object, format!("index/{id}"));
+        assert_eq!(report.damage[0].problem, "index-mismatch");
+    }
 }

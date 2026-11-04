@@ -2,6 +2,7 @@
 mod inventory;
 mod lock;
 mod trees;
+use crate::format::tree::Tree;
 use crate::{
     backend::{Backend, ObjectName},
     crypto::keys::Subkeys,
@@ -14,7 +15,11 @@ use crate::{
     repo::{Error, Repository, audit},
     secret::Secret,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    rc::Rc,
+};
+pub(super) type TreeLocation = (String, String, u64, u64, u64);
 
 pub(super) type BlobKey = (BlobKind, String);
 pub(super) struct State<'a, B> {
@@ -27,6 +32,7 @@ pub(super) struct State<'a, B> {
     pub live: HashMap<BlobKey, Vec<(String, Blob)>>,
     pub used: HashSet<BlobKey>,
     pub bad: HashSet<BlobKey>,
+    pub(super) tree_cache: HashMap<TreeLocation, Option<Rc<Tree>>>,
 }
 impl<'a, B: Backend> State<'a, B> {
     pub fn new(backend: &'a B, keys: Subkeys) -> Self {
@@ -40,6 +46,7 @@ impl<'a, B: Backend> State<'a, B> {
             live: HashMap::new(),
             used: HashSet::new(),
             bad: HashSet::new(),
+            tree_cache: HashMap::new(),
         }
     }
     pub fn metadata(&mut self) -> Result<(), Error> {
@@ -48,7 +55,42 @@ impl<'a, B: Backend> State<'a, B> {
         inventory::index(self)?;
         Ok(())
     }
+    fn audit_tree_blobs(&mut self) -> Result<(), Error> {
+        let locations = self
+            .packs
+            .iter()
+            .flat_map(|(pack, h)| {
+                h.iter().flat_map(move |h| {
+                    h.blobs
+                        .iter()
+                        .filter(|b| b.kind == BlobKind::Tree)
+                        .map(move |b| (pack.clone(), b.clone()))
+                })
+            })
+            .collect::<Vec<_>>();
+        for (pack, blob) in locations {
+            self.read_tree(&pack, &blob)?;
+        }
+        Ok(())
+    }
+    fn read_tree(&mut self, pack: &str, blob: &Blob) -> Result<Option<Rc<Tree>>, Error> {
+        let key = tree_key(pack, blob);
+        if let Some(tree) = self.tree_cache.get(&key) {
+            return Ok(tree.clone());
+        }
+        let name = crate::repo::blobs::pack_name(pack)?;
+        let result = audit::range(self.backend, &name, blob.offset, blob.length)
+            .and_then(|stored| audit::blob(&self.keys, &blob.id, name.as_str(), blob, &stored))
+            .and_then(|bytes| {
+                Tree::parse(&bytes)
+                    .map_err(|e| inventory::bad(&blob.id, &format!("{e}; pack {name}")))
+            });
+        let tree = self.report.collect(result)?.map(Rc::new);
+        self.tree_cache.insert(key, tree.clone());
+        Ok(tree)
+    }
     pub fn finish(mut self, verify: bool) -> Result<Report, Error> {
+        self.audit_tree_blobs()?;
         trees::walk(&mut self, verify)?;
         let live_packs = self
             .live
@@ -69,33 +111,40 @@ impl<'a, B: Backend> State<'a, B> {
         self.report.sort();
         Ok(self.report)
     }
-    pub fn tree(&self, id: &str) -> Result<Vec<u8>, Error> {
-        let Some(locations) = self.live.get(&(BlobKind::Tree, id.into())) else {
-            return Err(Error::Damage {
-                object: id.into(),
-                problem: "dangling-reference",
-                detail: "tree is absent from live index".into(),
-            });
-        };
-        let mut last = None;
+    pub fn tree(&mut self, id: &str) -> Result<Option<Rc<Tree>>, Error> {
+        let locations = self
+            .live
+            .get(&(BlobKind::Tree, id.into()))
+            .cloned()
+            .unwrap_or_default();
+        let mut available = false;
         for (pack, blob) in locations {
-            if !self.packs.contains_key(pack) {
-                continue;
-            }
-            let name = crate::repo::blobs::pack_name(pack)?;
-            let result = audit::range(self.backend, &name, blob.offset, blob.length)
-                .and_then(|stored| audit::blob(&self.keys, id, blob, &stored));
-            match result {
-                Ok(bytes) => return Ok(bytes),
-                Err(e @ Error::Damage { .. }) => last = Some(e),
-                Err(e) => return Err(e),
+            let blob = match self.packs.get(&pack) {
+                None => continue,
+                Some(Some(header)) => match header
+                    .blobs
+                    .iter()
+                    .find(|b| b.kind == BlobKind::Tree && b.id == id)
+                {
+                    Some(actual) => actual.clone(),
+                    None => continue,
+                },
+                Some(None) => blob,
+            };
+            available = true;
+            if let Some(tree) = self.read_tree(&pack, &blob)? {
+                return Ok(Some(tree));
             }
         }
-        Err(last.unwrap_or_else(|| Error::Damage {
-            object: id.into(),
-            problem: "dangling-reference",
-            detail: "tree has no available pack".into(),
-        }))
+        if !available {
+            self.report.add(
+                id,
+                "blob",
+                "dangling-reference",
+                "tree has no available live index location",
+            );
+        }
+        Ok(None)
     }
 }
 pub fn check<B: Backend>(repo: &Repository<B>) -> Result<Report, Error> {
@@ -115,4 +164,14 @@ pub(super) fn name_id(name: &ObjectName) -> String {
         .next()
         .expect("validated object name")
         .into()
+}
+
+pub(super) fn tree_key(pack: &str, blob: &Blob) -> TreeLocation {
+    (
+        pack.into(),
+        blob.id.clone(),
+        blob.offset,
+        blob.length,
+        blob.raw_length,
+    )
 }
