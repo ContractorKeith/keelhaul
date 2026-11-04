@@ -3,7 +3,9 @@ mod foreign;
 pub mod local;
 mod local_fs;
 mod local_scan;
+pub mod location;
 pub mod memory;
+pub mod s3;
 
 use std::{
     fmt, io,
