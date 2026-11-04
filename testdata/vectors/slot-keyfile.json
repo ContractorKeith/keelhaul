@@ -1,0 +1,13 @@
+{
+  "master": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "nonce": "000102030405060708090a0b0c0d0e0f1011121314151617",
+  "secret": "2424242424242424242424242424242424242424242424242424242424242424",
+  "slot": {
+    "created": "2026-11-04T14:03:22.123456789Z",
+    "host": "vector-host",
+    "kind": "keyfile",
+    "username": "vector-user",
+    "version": 1,
+    "wrapped": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXG6h5XnrHJzemhKk2isU0o032tPW72urhrx8Pmic/c+GhKJTux5KmKB5hr5D5OnDq"
+  }
+}
