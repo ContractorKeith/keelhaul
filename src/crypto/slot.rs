@@ -19,6 +19,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("secret kind does not match slot")]
     WrongKind,
+    #[error("{0}")]
+    Secret(#[from] crate::secret::Error),
 }
 
 pub(super) fn kek(secret: &Secret, kdf: Option<&Kdf>) -> Result<[u8; 32], Error> {
@@ -42,6 +44,8 @@ pub(super) fn kek(secret: &Secret, kdf: Option<&Kdf>) -> Result<[u8; 32], Error>
 }
 
 pub fn create(master: &MasterKey, secret: &Secret) -> Result<KeySlot, Error> {
+    // Production writers refuse empty passwords; readers still accept them.
+    secret.validate_new()?;
     let kdf = match secret {
         Secret::Password(_) => {
             Some(Kdf::new(65536, 3, 4, &super::keys::random::<16>()?).map_err(Error::BadFormat)?)

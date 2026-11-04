@@ -25,8 +25,32 @@ impl LocalBackend {
         let backend = Self {
             root: root.as_ref().to_path_buf(),
         };
-        backend.stat(&ObjectName::new("config")?)?;
-        Ok(backend)
+        let config = ObjectName::new("config")?;
+        let metadata =
+            fs::metadata(&backend.root).map_err(|e| object_error(&config, &backend.root, e))?;
+        if metadata.is_dir() {
+            for marker in ["config", "keys", "data", "index", "snapshots"] {
+                let path = backend.root.join(marker);
+                match fs::metadata(&path) {
+                    Ok(_) => return Ok(backend),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(at(&path, error)),
+                }
+            }
+        }
+        Err(BackendError::NotFound(config))
+    }
+
+    /// Resolve symlinked parents before deciding whether a new secret would
+    /// be stored inside this local repository.
+    pub fn contains_destination(&self, path: &Path) -> Result<bool, BackendError> {
+        let root = fs::canonicalize(&self.root).map_err(|e| at(&self.root, e))?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let parent = fs::canonicalize(parent).map_err(|e| at(parent, e))?;
+        Ok(parent.starts_with(root))
     }
 
     fn path(&self, name: &ObjectName) -> PathBuf {

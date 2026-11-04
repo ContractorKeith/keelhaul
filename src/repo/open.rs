@@ -52,6 +52,7 @@ impl<B: Backend> Repository<B> {
     /// A crash before the slot write leaves an unusable empty repository; delete
     /// that directory before retrying init. Existing repositories are never reset.
     pub fn init(backend: B, secret: &Secret) -> Result<Self, Error> {
+        secret.validate_new().map_err(slot::Error::from)?;
         for kind in Kind::ALL {
             if !backend.list(kind)?.is_empty() || !backend.list_foreign(kind)?.is_empty() {
                 return Err(Error::Refused("repository is not empty; to discard an incomplete init, delete the directory and retry".into()));
@@ -73,6 +74,11 @@ impl<B: Backend> Repository<B> {
     }
 
     pub fn open(backend: B, secret: &Secret) -> Result<Self, Error> {
+        let name = ObjectName::new("config")?;
+        let bytes = backend.read(&name).map_err(|e| match e {
+            BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
+            other => Error::Backend(other),
+        })?;
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let total = entries.len();
@@ -100,11 +106,6 @@ impl<B: Backend> Repository<B> {
                     objects: unreadable.join(", "),
                 }
             }
-        })?;
-        let name = ObjectName::new("config")?;
-        let bytes = backend.read(&name).map_err(|e| match e {
-            BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
-            other => Error::Backend(other),
         })?;
         let payload =
             envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {

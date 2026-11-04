@@ -3,9 +3,9 @@ use crate::format::key_slot::SlotKind;
 use std::os::unix::fs::OpenOptionsExt;
 use std::{
     fs,
-    io::{self, IsTerminal, Write},
+    io::{self, IsTerminal, Read, Write},
     path::Path,
-    process::Command,
+    process::{Command, Stdio},
 };
 
 // Deliberately no Debug: secret bytes must never reach diagnostics.
@@ -18,6 +18,12 @@ pub enum Secret {
 pub enum Error {
     #[error("exactly one secret source is required")]
     ConflictingSources,
+    #[error("password is empty")]
+    EmptyPassword,
+    #[error("new key file must be outside the repository")]
+    KeyInRepository,
+    #[error("password command output exceeds 1 MiB")]
+    CommandOutputTooLarge,
     #[error("no secret source supplied and no TTY available")]
     NoTty,
     #[error("password command failed")]
@@ -33,6 +39,13 @@ pub enum Error {
 }
 
 impl Secret {
+    pub fn validate_new(&self) -> Result<(), Error> {
+        if matches!(self, Self::Password(password) if password.is_empty()) {
+            return Err(Error::EmptyPassword);
+        }
+        Ok(())
+    }
+
     pub fn kind(&self) -> SlotKind {
         match self {
             Self::Password(_) => SlotKind::Password,
@@ -66,7 +79,9 @@ pub fn load_for_init(
     command: Option<&str>,
     key: Option<&Path>,
 ) -> Result<Secret, Error> {
-    load_with_confirmation(file, command, key, true)
+    let secret = load_with_confirmation(file, command, key, true)?;
+    secret.validate_new()?;
+    Ok(secret)
 }
 
 fn load_with_confirmation(
@@ -84,11 +99,7 @@ fn load_with_confirmation(
         return password(fs::read(file)?);
     }
     if let Some(command) = command {
-        let output = Command::new("sh").arg("-c").arg(command).output()?;
-        if !output.status.success() {
-            return Err(Error::CommandFailed);
-        }
-        return password(output.stdout);
+        return password(command_password(command)?);
     }
     if let Some(key) = key {
         return Ok(Secret::KeyFile(
@@ -117,10 +128,13 @@ fn prompt_with(
 }
 
 pub fn new_password(file: Option<&Path>) -> Result<Secret, Error> {
-    if let Some(path) = file {
-        return password(fs::read(path)?);
-    }
-    prompt(true)
+    let secret = if let Some(path) = file {
+        password(fs::read(path)?)?
+    } else {
+        prompt(true)?
+    };
+    secret.validate_new()?;
+    Ok(secret)
 }
 
 pub fn new_key_file(path: &Path) -> Result<Secret, Error> {
@@ -135,50 +149,39 @@ pub fn new_key_file(path: &Path) -> Result<Secret, Error> {
     Ok(Secret::KeyFile(bytes))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn confirmation_checks_both_prompts() {
-        for (answers, confirm, succeeds, calls) in [
-            (vec!["same", "same"], true, true, 2),
-            (vec!["first", "different"], true, false, 2),
-            (vec!["single"], false, true, 1),
-        ] {
-            let mut answers = answers.into_iter();
-            let mut prompts = Vec::new();
-            let result = prompt_with(confirm, |message| {
-                prompts.push(message.to_owned());
-                Ok(answers.next().unwrap().into())
-            });
-            assert_eq!(result.is_ok(), succeeds);
-            if !succeeds {
-                assert!(matches!(result, Err(Error::Mismatch)));
-            }
-            assert_eq!(prompts.len(), calls);
-            assert_eq!(prompts[0], "Password: ");
-            if confirm {
-                assert_eq!(prompts[1], "Confirm password: ");
-            }
+// Read at most one byte beyond the limit, then kill and reap the command on
+// every early error. Stderr is discarded so it cannot leak the password.
+fn command_password(command: &str) -> Result<Vec<u8>, Error> {
+    const LIMIT: u64 = 1024 * 1024;
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let result = (|| {
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("password command stdout unavailable"))?;
+        let mut bytes = Vec::new();
+        stdout.take(LIMIT + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > LIMIT {
+            return Err(Error::CommandOutputTooLarge);
         }
-        assert!(matches!(
-            prompt_with(true, |_| Err(io::Error::other("read failed"))),
-            Err(Error::Io(_))
-        ));
+        Ok(bytes)
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+        return result;
     }
-
-    #[test]
-    fn strips_exactly_one_line_ending() {
-        for (input, expected) in [
-            ("pw\n", "pw"),
-            ("pw\r\n", "pw"),
-            ("pw\n\n", "pw\n"),
-            ("pw\r", "pw\r"),
-        ] {
-            let Secret::Password(actual) = password(input.as_bytes().to_vec()).unwrap() else {
-                panic!()
-            };
-            assert_eq!(actual, expected);
-        }
+    if !child.wait()?.success() {
+        return Err(Error::CommandFailed);
     }
+    result
 }
+
+#[cfg(test)]
+mod tests;

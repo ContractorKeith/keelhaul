@@ -20,6 +20,7 @@ pub struct Cli {
     #[arg(
         long,
         env = "KEELHAUL_PASSWORD_COMMAND",
+        help = "Read password from sh -c COMMAND (stdout at most 1 MiB); command arguments are visible in ps",
         hide_env_values = true,
         global = true
     )]

@@ -232,3 +232,51 @@ fn config_pack_targets_and_strict_timestamps() {
         assert!(KeySlot::parse(&serde_json::to_vec(&slot["slot"]).unwrap()).is_err());
     }
 }
+
+#[test]
+fn reads_existing_empty_password_slot_but_wont_create_one() {
+    let master = fixed_master();
+    let secret = Secret::Password(String::new());
+    let slot = slot::wrap(
+        &master,
+        &secret,
+        Some(Kdf::new(8192, 1, 1, &[0x42; 16]).unwrap()),
+    )
+    .unwrap();
+    assert_eq!(slot::unwrap(&slot, &secret).unwrap().0, master.0);
+    assert!(matches!(
+        slot::create(&master, &secret),
+        Err(slot::Error::Secret(crate::secret::Error::EmptyPassword))
+    ));
+}
+
+#[test]
+fn repository_opens_third_party_empty_password_slot() {
+    use crate::backend::{Backend, ObjectName, memory::MemoryBackend};
+    let master = fixed_master();
+    let secret = Secret::Password(String::new());
+    let slot = slot::wrap(
+        &master,
+        &secret,
+        Some(Kdf::new(8192, 1, 1, &[0x42; 16]).unwrap()),
+    )
+    .unwrap();
+    let backend = MemoryBackend::new();
+    backend
+        .write(
+            &ObjectName::new(&format!("keys/{}", "ab".repeat(32))).unwrap(),
+            &serde_json::to_vec(&slot).unwrap(),
+        )
+        .unwrap();
+    let config = Config::new().unwrap();
+    let stored = envelope::seal(
+        &master.subkeys().encryption,
+        Label::Config,
+        &serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    backend
+        .write(&ObjectName::new("config").unwrap(), &stored)
+        .unwrap();
+    assert!(crate::repo::Repository::open(backend, &secret).is_ok());
+}

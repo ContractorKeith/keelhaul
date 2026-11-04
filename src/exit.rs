@@ -23,7 +23,11 @@ pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
     while let Some(cause) = current {
         if matches!(
             cause.downcast_ref::<crate::secret::Error>(),
-            Some(crate::secret::Error::ConflictingSources)
+            Some(
+                crate::secret::Error::ConflictingSources
+                    | crate::secret::Error::EmptyPassword
+                    | crate::secret::Error::KeyInRepository
+            )
         ) {
             return Failure::Usage;
         }

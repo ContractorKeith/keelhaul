@@ -42,7 +42,12 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                             new_password_file,
                         } => {
                             let new_secret = match new_key_file {
-                                Some(path) => secret::new_key_file(&path)?,
+                                Some(path) => {
+                                    if repo.backend.contains_destination(&path)? {
+                                        return Err(secret::Error::KeyInRepository.into());
+                                    }
+                                    secret::new_key_file(&path)?
+                                }
                                 None => secret::new_password(new_password_file.as_deref())?,
                             };
                             let id = repo.add_key(&new_secret)?;
