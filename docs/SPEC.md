@@ -34,8 +34,9 @@ A **repository** is a flat namespace of named objects stored by a **backend**. N
 it is the unkeyed BLAKE3-256 hash of the object's exact stored bytes (the ciphertext), so
 any reader can detect a damaged object by re-hashing it, without the password. `<id[0..2]>`
 is the first two hex characters of the pack ID. Names that do not match these patterns
-are not part of the repository; `check` reports them as unknown objects, never as damage,
-except partial uploads (§13), which it ignores.
+are not part of the repository; `check` reports them as unknown objects (notes), never as
+damage, except partial uploads (§13), which it ignores. A file with a valid name whose
+bytes do not hash to it is damage, including a zero-length one.
 
 Objects are written once and never modified. Prune and `key remove` delete objects;
 nothing rewrites one in place.
@@ -59,6 +60,7 @@ The **master key** is 32 random bytes made at `init`. Subkeys come from BLAKE3
 | encryption key | `keelhaul 2026-11 v1 encryption` |
 | chunk ID key | `keelhaul 2026-11 v1 chunk id` |
 | gear key | `keelhaul 2026-11 v1 gear` |
+| key-slot check key | `keelhaul 2026-11 v1 key slot check` |
 
 A key slot is a plaintext JSON object at `keys/<random id>`:
 
@@ -70,7 +72,8 @@ A key slot is a plaintext JSON object at `keys/<random id>`:
   "host": "omarchy",
   "username": "keith",
   "kdf": { "alg": "argon2id", "m_kib": 65536, "t": 3, "p": 4, "salt": "<b64 of 16 bytes>" },
-  "wrapped": "<b64 of an envelope>"
+  "wrapped": "<b64 of an envelope>",
+  "check": "<hex of 32 bytes>"
 }
 ```
 
@@ -87,6 +90,13 @@ plaintext exactly the 32-byte master key (no compression byte). Opening a reposi
 the supplied secret against every slot. Exactly one secret is supplied per command. Each
 slot is tried in name order until one decrypts. No slot decrypting is a wrong-password
 error (exit 1), not damage.
+
+`check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
+the BLAKE3 keyed hash (key = key-slot check subkey) of these bytes concatenated: the ASCII
+`kind`, one `0x00` byte, then for a password slot `m_kib`, `t`, `p` as u32 LE and the decoded
+salt, and finally the decoded `wrapped` bytes. A reader that opened the repository through
+another slot MUST recompute `check` for every slot and report a mismatch as damage of that
+slot. A reader unlocking through a slot verifies its `check` after unwrapping.
 
 Removing the last slot is refused. A repository never stores the master key unwrapped.
 
