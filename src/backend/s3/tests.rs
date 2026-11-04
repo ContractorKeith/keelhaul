@@ -68,6 +68,17 @@ fn s3_captured_versitygw_pages_parse() {
 }
 
 fn mock(responses: Vec<(u16, &'static str)>) -> (S3Backend, std::thread::JoinHandle<Vec<String>>) {
+    mock_headers(
+        responses
+            .into_iter()
+            .map(|(status, body)| (status, body, ""))
+            .collect(),
+    )
+}
+
+pub(super) fn mock_headers(
+    responses: Vec<(u16, &'static str, &'static str)>,
+) -> (S3Backend, std::thread::JoinHandle<Vec<String>>) {
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -76,7 +87,7 @@ fn mock(responses: Vec<(u16, &'static str)>) -> (S3Backend, std::thread::JoinHan
     let endpoint = format!("s3:http://{}/bucket/repo", listener.local_addr().unwrap());
     let worker = std::thread::spawn(move || {
         let mut requests = Vec::new();
-        for (status, body) in responses {
+        for (status, body, extra) in responses {
             let (mut stream, _) = listener.accept().unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
@@ -105,7 +116,7 @@ fn mock(responses: Vec<(u16, &'static str)>) -> (S3Backend, std::thread::JoinHan
             requests.push(header);
             write!(
                 stream,
-                "HTTP/1.1 {status} Mock\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 {status} Mock\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n",
                 body.len()
             )
             .unwrap();

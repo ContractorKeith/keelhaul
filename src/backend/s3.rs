@@ -2,6 +2,9 @@
 mod config;
 mod http;
 mod list;
+mod range;
+#[cfg(test)]
+mod request_tests;
 #[cfg(test)]
 mod tests;
 use self::http::{Response, success};
@@ -61,7 +64,8 @@ impl S3Backend {
     }
 
     // Probe an isolated temporary object, so servers silently ignoring the header
-    // are detected too. Serialize fallback writers within this backend instance.
+    // are detected too. If killed before DELETE, SPEC §13 lets prune remove
+    // this temporary object once it is older than 30 minutes.
     fn detect_conditional(&self) -> Result<bool, BackendError> {
         let mut nonce = [0; 8];
         getrandom::fill(&mut nonce).map_err(|_| error("S3 probe nonce generation failed"))?;
@@ -122,12 +126,10 @@ impl Backend for S3Backend {
                 supported
             }
         };
-        let _fallback_guard = if conditional {
-            drop(state);
-            None
-        } else {
-            Some(state)
-        };
+        drop(state);
+        // Content-addressed names imply identical bytes for racing writers.
+        // Config and key slots are initialized once, so HEAD-then-PUT is acceptable
+        // without serializing uploads when conditional PUT is unavailable.
         let key = self.key(name.as_str());
         if !conditional {
             match self.stat(name) {
@@ -172,25 +174,21 @@ impl Backend for S3Backend {
         offset: u64,
         len: u64,
     ) -> Result<Vec<u8>, BackendError> {
-        let size = self.stat(name)?;
-        if offset >= size || len == 0 {
+        if len == 0 {
             return Ok(Vec::new());
         }
-        let end = offset.saturating_add(len - 1).min(size - 1);
+        let end = offset.saturating_add(len - 1);
         let range = format!("bytes={offset}-{end}");
         let key = self.key(name.as_str());
-        let r = self.object_response(
-            name,
-            self.request(
-                self.bucket.get_object(Some(&self.credentials), &key),
-                &[("range", &range)],
-                &[],
-            )?,
+        let r = self.request(
+            self.bucket.get_object(Some(&self.credentials), &key),
+            &[("range", &range)],
+            &[],
         )?;
-        if r.status != 206 || r.bytes.len() as u64 != end - offset + 1 {
-            return Err(error("S3 returned invalid ranged response"));
+        if r.status == 416 {
+            return Ok(Vec::new());
         }
-        Ok(r.bytes)
+        range::bytes(self.object_response(name, r)?, offset, end)
     }
 
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError> {

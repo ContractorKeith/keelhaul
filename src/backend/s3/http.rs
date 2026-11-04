@@ -6,6 +6,7 @@ use std::{io, thread, time::Duration};
 pub(super) struct Response {
     pub status: u16,
     pub size: Option<u64>,
+    pub content_range: Option<String>,
     pub bytes: Vec<u8>,
 }
 
@@ -40,6 +41,11 @@ impl S3Backend {
                     .get("content-length")
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| v.parse().ok());
+                let content_range = r
+                    .headers()
+                    .get("content-range")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned);
                 let bytes = if (200..300).contains(&status) {
                     r.body_mut()
                         .with_config()
@@ -51,6 +57,7 @@ impl S3Backend {
                 Ok(Response {
                     status,
                     size,
+                    content_range,
                     bytes,
                 })
             });
