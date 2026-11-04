@@ -170,8 +170,8 @@ fn seeded_sigkill_backup_loop() {
     // a stalled first pack must not enter an index; a stalled ninth pack leaves
     // the first eight-pack index reusable. Random kills below cover normal I/O.
     for (hook, kind, minimum) in [
-        ("write:1:hang", Kind::Data, 7),
-        ("write:10:hang", Kind::Index, 1),
+        ("write:2:hang", Kind::Data, 7),
+        ("write:11:hang", Kind::Index, 1),
     ] {
         initialize(&root);
         exercise(
@@ -221,7 +221,7 @@ fn failed_upload_exits_one_preserves_previous_snapshot_and_reruns() {
     backup(&root);
     fs::write(root.join("source/new"), vec![91; 8 * 1024 * 1024]).unwrap();
     let output = command(&root)
-        .env("KEELHAUL_FAULT", "write:1:fail")
+        .env("KEELHAUL_FAULT", "write:2:fail")
         .arg("backup")
         .arg(root.join("source"))
         .output()
@@ -241,10 +241,10 @@ fn flushed_index_survives_sigkill_before_snapshot() {
     let scratch = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(scratch.path()).unwrap();
     fixture(&root);
-    // Four 4 MiB random files and a small tree fit in two packs. The fourth
+    // Four 4 MiB random files and a small tree fit in two packs. The fifth
     // write hangs at the snapshot, after both packs and the index are durable.
     let mut child = command(&root)
-        .env("KEELHAUL_FAULT", "write:4:hang")
+        .env("KEELHAUL_FAULT", "write:5:hang")
         .arg("backup")
         .arg(root.join("source"))
         .stdout(Stdio::null())
@@ -278,3 +278,5 @@ fn flushed_index_survives_sigkill_before_snapshot() {
 }
 #[path = "common/crash_errors.rs"]
 mod errors;
+#[path = "common/prune_crash.rs"]
+mod prune_crash;

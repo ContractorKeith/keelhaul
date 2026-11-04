@@ -37,7 +37,24 @@ impl Uploads {
         Ok(())
     }
 }
-impl<B: Backend> BlobStore<'_, B> {
+impl<'a, B: Backend> BlobStore<'a, B> {
+    /// Fresh assembler for prune: retained data is explicitly copied, never deduplicated away.
+    pub fn repack_writer(repo: &'a Repository<B>) -> Result<Self, Error> {
+        let mut writer = Self::load(repo)?;
+        writer.index.clear();
+        writer.headers.clear();
+        Ok(writer)
+    }
+    pub fn written_packs(&self) -> Vec<crate::format::index::Pack> {
+        self.headers
+            .iter()
+            .map(|(id, (_, blobs))| crate::format::index::Pack {
+                id: id.clone(),
+                blobs: blobs.clone(),
+            })
+            .collect()
+    }
+
     pub fn upload_pool(
         &mut self,
         sender: SyncSender<Upload>,

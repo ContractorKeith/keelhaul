@@ -39,19 +39,26 @@ impl Subset {
     }
 }
 pub fn verify<B: Backend>(repo: &Repository<B>, subset: Option<Subset>) -> Result<Report, Error> {
-    run(State::new(&repo.backend, repo.subkeys()), subset)
+    crate::repo::lock::with_audit(&repo.backend, repo.subkeys(), |damage| {
+        run(State::new(&repo.backend, repo.subkeys()), subset, damage)
+    })
 }
 pub fn verify_backend<B: Backend>(
     backend: &B,
     secret: &Secret,
     subset: Option<Subset>,
 ) -> Result<Report, Error> {
-    run(
-        State::new(backend, Repository::unlock(backend, secret)?.subkeys()),
-        subset,
-    )
+    let master = Repository::unlock(backend, secret)?;
+    crate::repo::lock::with_audit(backend, master.subkeys(), |damage| {
+        run(State::new(backend, master.subkeys()), subset, damage)
+    })
 }
-fn run<B: Backend>(mut state: State<'_, B>, subset: Option<Subset>) -> Result<Report, Error> {
+fn run<B: Backend>(
+    mut state: State<'_, B>,
+    subset: Option<Subset>,
+    damage: Vec<crate::damage::Damage>,
+) -> Result<Report, Error> {
+    state.report.damage.extend(damage);
     state.metadata()?;
     let mut good = HashSet::new();
     let mut indexed_packs: HashMap<&str, HashMap<_, _>> = HashMap::new();

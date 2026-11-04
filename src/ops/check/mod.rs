@@ -50,7 +50,6 @@ impl<'a, B: Backend> State<'a, B> {
         }
     }
     pub fn metadata(&mut self) -> Result<(), Error> {
-        // M5: shared lock
         inventory::scan(self)?;
         inventory::index(self)?;
         Ok(())
@@ -88,6 +87,9 @@ impl<'a, B: Backend> State<'a, B> {
         let tree = self.report.collect(result)?.map(Rc::new);
         self.tree_cache.insert(key, tree.clone());
         Ok(tree)
+    }
+    pub(super) fn reachable(&mut self) -> Result<(), Error> {
+        trees::walk(self, false)
     }
     pub fn finish(mut self, verify: bool) -> Result<Report, Error> {
         self.audit_tree_blobs()?;
@@ -148,15 +150,16 @@ impl<'a, B: Backend> State<'a, B> {
     }
 }
 pub fn check<B: Backend>(repo: &Repository<B>) -> Result<Report, Error> {
-    let mut state = State::new(&repo.backend, repo.subkeys());
-    state.metadata()?;
-    state.finish(false)
+    crate::repo::lock::with_audit(&repo.backend, repo.subkeys(), |damage| {
+        run_check(State::new(&repo.backend, repo.subkeys()), damage)
+    })
 }
 /// Authenticate without requiring a valid config: audit it with the other objects.
 pub fn check_backend<B: Backend>(backend: &B, secret: &Secret) -> Result<Report, Error> {
-    let mut state = State::new(backend, Repository::unlock(backend, secret)?.subkeys());
-    state.metadata()?;
-    state.finish(false)
+    let master = Repository::unlock(backend, secret)?;
+    crate::repo::lock::with_audit(backend, master.subkeys(), |damage| {
+        run_check(State::new(backend, master.subkeys()), damage)
+    })
 }
 pub(super) fn name_id(name: &ObjectName) -> String {
     name.as_str()
@@ -174,4 +177,13 @@ pub(super) fn tree_key(pack: &str, blob: &Blob) -> TreeLocation {
         blob.length,
         blob.raw_length,
     )
+}
+
+fn run_check<B: Backend>(
+    mut state: State<'_, B>,
+    damage: Vec<crate::damage::Damage>,
+) -> Result<Report, Error> {
+    state.report.damage.extend(damage);
+    state.metadata()?;
+    state.finish(false)
 }

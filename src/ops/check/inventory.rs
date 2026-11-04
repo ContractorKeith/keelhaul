@@ -63,11 +63,19 @@ pub(super) fn scan<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
                 Kind::Locks => Label::Lock,
                 _ => unreachable!("handled above"),
             };
-            let Some(bytes) =
-                state
-                    .report
-                    .collect(audit::object(state.backend, &state.keys, name, label))?
-            else {
+            let object = audit::object(state.backend, &state.keys, name, label);
+            if kind == Kind::Locks
+                && matches!(
+                    object,
+                    Err(Error::Damage {
+                        problem: "missing",
+                        ..
+                    })
+                )
+            {
+                continue;
+            }
+            let Some(bytes) = state.report.collect(object)? else {
                 continue;
             };
             match kind {

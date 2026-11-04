@@ -43,6 +43,11 @@ pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
         ) {
             return Failure::Damage;
         }
+        match cause.downcast_ref::<crate::repo::Error>() {
+            Some(crate::repo::Error::Locked(_)) => return Failure::Locked,
+            Some(crate::repo::Error::Usage(_)) => return Failure::Usage,
+            _ => {}
+        }
         current = cause.source();
     }
     Failure::Error

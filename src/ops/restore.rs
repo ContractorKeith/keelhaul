@@ -36,6 +36,17 @@ pub fn restore_for_host<B: Backend>(
     includes: &[PathBuf],
     host: Option<&str>,
 ) -> Result<Report, Error> {
+    crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
+        restore_for_host_locked(repo, selector, target, includes, host)
+    })
+}
+fn restore_for_host_locked<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    target: &Path,
+    includes: &[PathBuf],
+    host: Option<&str>,
+) -> Result<Report, Error> {
     let (snapshot_id, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
     let mut report = Report::default();
