@@ -54,20 +54,20 @@ impl Lock {
             .unwrap_or_default())
     }
     pub fn stale(&self, now: SystemTime) -> Result<bool, Error> {
-        if self.age(now)? > STALE {
-            return Ok(true);
-        }
+        Ok(self.age(now)? > STALE)
+    }
+    pub fn dead(&self) -> bool {
         if self.host != crate::host::hostname() {
-            return Ok(false);
+            return false;
         }
         let Some(pid) = rustix::process::Pid::from_raw(self.pid.try_into().unwrap_or(0)) else {
-            return Ok(true);
+            return true;
         };
         // EPERM means the PID exists; only ESRCH proves it is gone.
-        Ok(matches!(
+        matches!(
             rustix::process::test_kill_process(pid),
             Err(rustix::io::Errno::SRCH)
-        ))
+        )
     }
 }
 pub(super) fn timestamp(now: SystemTime) -> Result<String, Error> {

@@ -63,9 +63,9 @@ impl<'a, B: Backend> Guard<'a, B> {
                 Err(error)
             }
         })? {
-            if name != own && !lock.stale(clock.now())? && (exclusive || lock.exclusive) {
+            if name != own && !lock.dead() && (exclusive || lock.exclusive) {
                 return Err(Error::Locked(format!(
-                    "repository locked by {} pid {} (age {}s)",
+                    "repository locked by {} pid {} (age {}s); if that process is gone, run `keelhaul unlock`",
                     lock.host,
                     lock.pid,
                     lock.age(clock.now())?.as_secs()
@@ -113,12 +113,19 @@ impl<'a, B: Backend> Guard<'a, B> {
         Ok(())
     }
     pub fn run<T>(&self, operation: impl FnOnce(&Self) -> Result<T, Error>) -> Result<T, Error> {
+        self.run_interval(Duration::from_secs(300), operation)
+    }
+    fn run_interval<T>(
+        &self,
+        interval: Duration,
+        operation: impl FnOnce(&Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         std::thread::scope(|scope| {
             let (send, recv) = mpsc::channel::<()>();
             // Dropping the sender also wakes the thread when the operation unwinds.
             let worker = scope.spawn(move || {
                 while matches!(
-                    recv.recv_timeout(Duration::from_secs(300)),
+                    recv.recv_timeout(interval),
                     Err(mpsc::RecvTimeoutError::Timeout)
                 ) {
                     if let Err(error) = self.refresh() {
@@ -235,3 +242,6 @@ pub fn unlock<B: Backend>(
     }
     Ok(removed)
 }
+
+#[cfg(test)]
+mod tests;

@@ -98,25 +98,29 @@ impl Options {
 }
 pub fn forget<B: Backend>(repo: &Repository<B>, options: &Options) -> Result<Report, Error> {
     options.validate()?;
-    let guard = lock::Guard::acquire(&repo.backend, repo.subkeys(), true, &SystemClock)?;
-    let scanned = repo.scan_snapshots()?;
-    if scanned.damaged {
-        return Err(Error::Damage {
-            object: "snapshots".into(),
-            problem: "bad-format",
-            detail: "unreadable snapshot; retention aborted".into(),
-        });
-    }
-    let mut explicit = HashSet::new();
-    for selector in &options.snapshots {
-        explicit.insert(repo.select_snapshot(selector)?.0);
-    }
-    // time's safe local-offset lookup may refuse in a multithreaded process. Plan
-    // before starting the refresher; if unavailable, report the required UTC fallback.
-    let report = plan(scanned.entries, options, &explicit, |t| {
-        UtcOffset::local_offset_at(t).ok()
-    })?;
-    guard.run(|guard| {
+    // time 0.3.55 refreshes TZ separately from offset lookup. Its safe refresh
+    // refuses unsupported multithreaded environments; never bypass that guard.
+    let local_zone = time::util::refresh_tz().is_some();
+    lock::with(&repo.backend, repo.subkeys(), true, |guard| {
+        let scanned = repo.scan_snapshots()?;
+        if scanned.damaged {
+            return Err(Error::Damage {
+                object: "snapshots".into(),
+                problem: "bad-format",
+                detail: "unreadable snapshot; retention aborted".into(),
+            });
+        }
+        let mut explicit = HashSet::new();
+        for selector in &options.snapshots {
+            explicit.insert(repo.select_snapshot(selector)?.0);
+        }
+        let report = plan(scanned.entries, options, &explicit, |t| {
+            if local_zone {
+                UtcOffset::local_offset_at(t).ok()
+            } else {
+                None
+            }
+        })?;
         if !options.dry_run {
             guard.self_check()?;
             for group in &report.groups {

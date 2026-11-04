@@ -2,6 +2,7 @@ mod excludes;
 mod files;
 mod parent;
 mod pipeline;
+mod publication;
 #[cfg(test)]
 mod tests;
 mod trees;
@@ -184,6 +185,7 @@ fn backup_locked<B: Backend>(
         Label::Snapshot,
         &serde_json::to_vec(&snapshot)?,
     )?;
+    publication::check(repo, &id, &result.packs)?;
     Ok(Report {
         snapshot: id,
         summary: ReportSummary {
