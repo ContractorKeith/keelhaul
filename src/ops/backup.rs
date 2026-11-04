@@ -185,7 +185,7 @@ fn backup_locked<B: Backend>(
         Label::Snapshot,
         &serde_json::to_vec(&snapshot)?,
     )?;
-    publication::check(repo, &id, &result.packs)?;
+    publication::check(repo, &id, &result.blobs)?;
     Ok(Report {
         snapshot: id,
         summary: ReportSummary {

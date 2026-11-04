@@ -71,6 +71,20 @@ fn seeded_sigkill_prune_loop_and_backup_exclusion() {
     let baseline = start.elapsed();
     fs::remove_dir_all(root.join("repo")).unwrap();
     copy_repo(&root.join("template"), &root.join("repo"));
+    for hook in ["delete:1:panic", "write:4:panic"] {
+        let output = command(&root)
+            .env("KEELHAUL_FAULT", hook)
+            .arg("prune")
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "fault {hook} must fire");
+        check(&root);
+        verify(&root);
+        restored(&root);
+        prune(&root);
+        fs::remove_dir_all(root.join("repo")).unwrap();
+        copy_repo(&root.join("template"), &root.join("repo"));
+    }
     // Stall after the exclusive lock, while uploading the replacement pack.
     let mut child = command(&root)
         .env("KEELHAUL_FAULT", "write:2:hang")
@@ -149,5 +163,34 @@ fn seeded_sigkill_prune_loop_and_backup_exclusion() {
     eprintln!(
         "prune crash loop: {iterations} iterations ok, SIGKILLs={killed}, seed={seed}, elapsed={:.2}s",
         start.elapsed().as_secs_f64()
+    );
+}
+
+#[path = "m5_prune_fixture.rs"]
+mod setup;
+#[test]
+fn panic_after_first_delete_keeps_snapshot_restorable() {
+    let scratch = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(scratch.path()).unwrap();
+    fs::write(root.join("key"), [13; 32]).unwrap();
+    let (_, snapshot, contents) =
+        setup::fixture(keelhaul::backend::local::LocalBackend::new(root.join("repo")).unwrap());
+    let output = command(&root)
+        .env("KEELHAUL_FAULT", "delete:1:panic")
+        .args(["prune", "--max-unused", "100"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("injected delete worker panic"));
+    check(&root);
+    verify(&root);
+    ok(command(&root)
+        .args(["restore", &snapshot, "--target"])
+        .arg(root.join("restored"))
+        .output()
+        .unwrap());
+    assert_eq!(
+        fs::read(root.join("restored/file")).unwrap(),
+        contents[..7].concat()
     );
 }

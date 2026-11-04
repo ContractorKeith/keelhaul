@@ -15,7 +15,10 @@ pub struct Options {
     pub snapshots: Vec<String>,
     #[arg(long)]
     pub keep_last: Option<usize>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Keep the newest snapshot per local hour; the repeated DST hour is one bucket"
+    )]
     pub keep_hourly: Option<usize>,
     #[arg(long)]
     pub keep_daily: Option<usize>,
@@ -153,7 +156,12 @@ pub fn plan(
     for (id, snapshot) in snapshots {
         let key = GroupKey {
             host: grouping.contains("host").then(|| snapshot.host.clone()),
-            paths: grouping.contains("paths").then(|| snapshot.paths.clone()),
+            paths: grouping.contains("paths").then(|| {
+                let mut paths = snapshot.paths.clone();
+                paths.sort();
+                paths.dedup();
+                paths
+            }),
         };
         groups.entry(key).or_default().push((id, snapshot));
     }
@@ -198,12 +206,11 @@ pub fn plan(
                 let (week_year, week, _) = local.to_iso_week_date();
                 let keys = [
                     format!(
-                        "{}-{}-{}-{}-{}",
+                        "{}-{}-{}-{}",
                         local.year(),
                         local.month() as u8,
                         local.day(),
-                        local.hour(),
-                        local.offset()
+                        local.hour()
                     ),
                     format!("{}-{}-{}", local.year(), local.month() as u8, local.day()),
                     format!("{week_year}-{week}"),

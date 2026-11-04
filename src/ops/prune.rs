@@ -1,12 +1,10 @@
 //! Plan fully before mutating; publish the replacement index before deleting anything.
-use super::check::{BlobKey, State};
+mod delete;
+mod indexes;
+mod used;
 use crate::{
     backend::{Backend, Kind},
-    crypto::envelope::Label,
-    format::{
-        index::{Index, Pack},
-        pack::Blob,
-    },
+    format::index::Pack,
     repo::{
         Error, Repository, audit,
         blobs::{BlobStore, pack_name},
@@ -15,7 +13,7 @@ use crate::{
 };
 use serde::Serialize;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     time::SystemTime,
 };
 #[derive(Debug, Default, Serialize)]
@@ -27,17 +25,29 @@ pub struct Summary {
     pub blobs_copied: usize,
     pub temporary_removed: usize,
     pub dry_run: bool,
+    pub indexes_written: usize,
+    pub warnings: Vec<String>,
 }
 pub fn prune<B: Backend>(
     repo: &Repository<B>,
     max_unused: u8,
     dry_run: bool,
 ) -> Result<Summary, Error> {
-    lock::with(&repo.backend, repo.subkeys(), true, |guard| {
-        run(repo, max_unused, dry_run, &SystemClock, guard)
-    })
+    prune_with_clock(repo, max_unused, dry_run, &SystemClock)
 }
+pub fn prune_with_clock<B: Backend>(
+    repo: &Repository<B>,
+    max_unused: u8,
+    dry_run: bool,
+    clock: &dyn Clock,
+) -> Result<Summary, Error> {
+    let guard = lock::Guard::acquire(&repo.backend, repo.subkeys(), true, clock)?;
+    guard.run(|guard| run(repo, max_unused, dry_run, clock, guard))
+}
+
 fn old(modified: Option<SystemTime>, now: SystemTime) -> bool {
+    // Missing modification times disable both age-based cleanups: retain orphan
+    // packs and temporary names because their safe cleanup age is unknown.
     modified
         .and_then(|t| now.duration_since(t).ok())
         .is_some_and(|age| age > STALE)
@@ -49,59 +59,39 @@ pub(super) fn run<B: Backend>(
     clock: &dyn Clock,
     guard: &lock::Guard<'_, B>,
 ) -> Result<Summary, Error> {
+    run_limit(repo, max_unused, dry_run, clock, guard, indexes::LIMIT)
+}
+pub fn prune_with_index_limit<B: Backend>(
+    repo: &Repository<B>,
+    max_unused: u8,
+    dry_run: bool,
+    limit: usize,
+) -> Result<Summary, Error> {
+    let guard = lock::Guard::acquire(&repo.backend, repo.subkeys(), true, &SystemClock)?;
+    guard.run(|guard| run_limit(repo, max_unused, dry_run, &SystemClock, guard, limit))
+}
+fn run_limit<B: Backend>(
+    repo: &Repository<B>,
+    max_unused: u8,
+    dry_run: bool,
+    clock: &dyn Clock,
+    guard: &lock::Guard<'_, B>,
+    limit: usize,
+) -> Result<Summary, Error> {
     if max_unused > 100 {
         return Err(Error::Usage("max-unused must be 0–100".into()));
     }
-    let mut state = State::new(&repo.backend, repo.subkeys());
-    state.metadata()?;
-    state.reachable()?;
-    if let Some(damage) = state.report.damage.first() {
-        return Err(Error::Damage {
-            object: damage.object.clone(),
-            problem: "bad-format",
-            detail: damage.to_string(),
-        });
-    }
-    // Choose one verified location per reachable blob, trying duplicates on damage.
-    let mut selected: HashMap<BlobKey, (String, Blob)> = HashMap::new();
-    let mut duplicates = HashSet::new();
-    let mut used = state.used.iter().collect::<Vec<_>>();
-    used.sort_by(|a, b| a.1.cmp(&b.1));
-    for key in used {
-        let locations = state.live.get(key).ok_or_else(|| Error::Damage {
-            object: key.1.clone(),
-            problem: "dangling-reference",
-            detail: "no indexed copy".into(),
-        })?;
-        let mut verified = None;
-        let mut failure = None;
-        for (pack, blob) in locations {
-            let name = pack_name(pack)?;
-            let result = audit::range(&repo.backend, &name, blob.offset, blob.length)
-                .and_then(|bytes| audit::blob(&state.keys, &blob.id, name.as_str(), blob, &bytes));
-            match result {
-                Ok(_) => {
-                    verified = Some((pack.clone(), blob.clone()));
-                    break;
-                }
-                Err(e @ Error::Damage { .. }) => failure = Some(e),
-                Err(e) => return Err(e),
-            }
-        }
-        let location = verified.ok_or_else(|| {
-            failure.unwrap_or_else(|| Error::Damage {
-                object: key.1.clone(),
-                problem: "missing",
-                detail: "no verified copy".into(),
-            })
-        })?;
-        if locations.len() > 1 {
-            for (pack, _) in locations {
-                duplicates.insert(pack.clone());
-            }
-        }
-        selected.insert(key.clone(), location);
-    }
+    let scanned_indexes = repo
+        .backend
+        .list(Kind::Index)?
+        .into_iter()
+        .map(|e| e.name.to_string())
+        .collect::<HashSet<_>>();
+    let used::Reachable {
+        state,
+        mut selected,
+        mut force_repack,
+    } = used::scan(repo)?;
     let named = state
         .live
         .values()
@@ -118,23 +108,24 @@ pub(super) fn run<B: Backend>(
     };
     for entry in repo.backend.list(Kind::Data)? {
         let id = entry.name.as_str()[8..].to_owned();
-        let Some(Some(header)) = state.packs.get(&id) else {
-            return Err(Error::Refused(
-                "pack inventory changed under exclusive lock".into(),
-            ));
-        };
-        let chosen = header
-            .blobs
-            .iter()
-            .filter(|blob| {
-                selected
-                    .get(&(blob.kind, blob.id.clone()))
-                    .is_some_and(|(p, b)| p == &id && b == *blob)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let header = state.packs.get(&id).ok_or_else(|| {
+            Error::Refused(format!(
+                "new pack appeared during prune: {}; rerun prune",
+                entry.name
+            ))
+        })?;
+        // An unreadable header is distinct from a new pack. Verified indexed
+        // ranges can be rescued, but this damaged physical pack is never kept.
+        if header.is_none() {
+            force_repack.insert(id.clone());
+        }
+        let mut chosen = selected.remove(&id).unwrap_or_default();
+        chosen.sort_by_key(|blob| blob.offset);
         if chosen.is_empty() {
             if !named.contains(&id) && !old(entry.modified, clock.now()) {
+                if entry.modified.is_none() {
+                    unknown_modified(&mut summary);
+                }
                 summary.packs_kept += 1;
                 continue;
             }
@@ -143,9 +134,13 @@ pub(super) fn run<B: Backend>(
             remove.push(entry.name);
             continue;
         }
-        let total: u128 = header.blobs.iter().map(|b| u128::from(b.length)).sum();
+        let total: u128 = header
+            .as_ref()
+            .map(|h| h.blobs.iter().map(|b| u128::from(b.length)).sum())
+            .unwrap_or(u128::from(entry.size));
         let retained: u128 = chosen.iter().map(|b| u128::from(b.length)).sum();
-        if (total - retained) * 100 > total * u128::from(max_unused) || duplicates.contains(&id) {
+        let total = total.max(retained);
+        if (total - retained) * 100 > total * u128::from(max_unused) || force_repack.contains(&id) {
             summary.packs_repacked += 1;
             summary.blobs_copied += chosen.len();
             // Exact stored-byte saving is finalized after the replacement packs exist.
@@ -160,7 +155,11 @@ pub(super) fn run<B: Backend>(
                 id.clone(),
                 Pack {
                     id,
-                    blobs: header.blobs.clone(),
+                    blobs: header
+                        .as_ref()
+                        .expect("unreadable headers are always repacked")
+                        .blobs
+                        .clone(),
                 },
             );
         }
@@ -168,6 +167,9 @@ pub(super) fn run<B: Backend>(
     let mut temporary = Vec::new();
     for kind in Kind::ALL {
         for entry in repo.backend.list_foreign(kind)? {
+            if entry.deletable && is_temporary(&entry.raw) && entry.modified.is_none() {
+                unknown_modified(&mut summary);
+            }
             if entry.deletable && is_temporary(&entry.raw) && old(entry.modified, clock.now()) {
                 summary.temporary_removed += 1;
                 summary.bytes_freed += entry.size;
@@ -203,35 +205,51 @@ pub(super) fn run<B: Backend>(
         .saturating_sub(written_bytes);
     // Include any additive indexes the pack writer flushed. They stay valid on a crash.
     let old_indexes = repo.backend.list(Kind::Index)?;
-    let replacement = Index {
-        version: 1,
-        supersedes: old_indexes
+    let mut expected_indexes = scanned_indexes;
+    expected_indexes.extend(
+        writer
+            .written_indexes()
+            .iter()
+            .map(|id| format!("index/{id}")),
+    );
+    indexes::unchanged(repo, &expected_indexes)?;
+    guard.self_check()?;
+    // Publish replacements before deleting any old object.
+    let replacement_ids = indexes::write(
+        repo,
+        guard,
+        keep.into_values().collect(),
+        old_indexes
             .iter()
             .map(|e| e.name.as_str()[6..].to_owned())
             .collect(),
-        packs: keep.into_values().collect(),
-    };
-    let bytes = serde_json::to_vec(&replacement)?;
-    // An atomic replacement must fit the format's object limit; never partially supersede.
-    if bytes.len() > 64 * 1024 * 1024 {
-        return Err(Error::Refused(
-            "replacement index exceeds 64 MiB object limit".into(),
-        ));
+        limit,
+    )?;
+    summary.indexes_written = replacement_ids.len();
+    expected_indexes.extend(replacement_ids.iter().map(|id| format!("index/{id}")));
+    let snapshots = state.snapshots.keys().cloned().collect::<HashSet<_>>();
+    if let Err(error) = delete::fence(repo, guard, &snapshots)
+        .and_then(|()| indexes::unchanged(repo, &expected_indexes))
+    {
+        // Before the first deletion, withdrawing only our replacement objects
+        // restores old indexes needed by a backup that ran while we slept.
+        for id in replacement_ids.iter().rev() {
+            repo.backend
+                .delete(&crate::backend::ObjectName::new(&format!("index/{id}"))?)?;
+        }
+        return Err(error);
     }
-    guard.self_check()?;
-    repo.write_object("index", Label::Index, &bytes)?;
-    for entry in old_indexes {
-        repo.backend.delete(&entry.name)?;
-    }
-    for (name, _) in repack {
-        repo.backend.delete(&name)?;
-    }
-    for name in remove {
-        repo.backend.delete(&name)?;
-    }
-    for raw in temporary {
-        repo.backend.delete_foreign(&raw)?;
-    }
+    let targets = old_indexes
+        .into_iter()
+        .map(|entry| delete::Target::Object(entry.name))
+        .chain(
+            repack
+                .into_iter()
+                .map(|(name, _)| delete::Target::Object(name)),
+        )
+        .chain(remove.into_iter().map(delete::Target::Object))
+        .chain(temporary.into_iter().map(delete::Target::Foreign));
+    delete::run(repo, guard, &snapshots, clock, targets)?;
     Ok(summary)
 }
 fn is_temporary(raw: &str) -> bool {
@@ -241,4 +259,10 @@ fn is_temporary(raw: &str) -> bool {
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     })
+}
+
+fn unknown_modified(summary: &mut Summary) {
+    if summary.warnings.is_empty() {
+        summary.warnings.push("modification times unavailable; retaining orphan packs and temporary names of unknown age".into());
+    }
 }

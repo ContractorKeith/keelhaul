@@ -81,13 +81,16 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 } => {
                     let repo = Repository::open(backend, &secret)?;
                     let summary = crate::ops::prune::prune(&repo, max_unused, dry_run)?;
-                    let text = format!(
+                    let mut text = format!(
                         "{} packs removed, {} repacked, {} bytes freed{}",
                         summary.packs_removed,
                         summary.packs_repacked,
                         summary.bytes_freed,
                         if dry_run { " (dry run)" } else { "" }
                     );
+                    for warning in &summary.warnings {
+                        text.push_str(&format!("\nwarning: {warning}"));
+                    }
                     (serde_json::to_value(summary)?, text)
                 }
                 Command::Unlock => {

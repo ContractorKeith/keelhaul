@@ -1,4 +1,4 @@
-//! Retain the snapshot's indexed pack set across the publication window.
+//! Retain the snapshot's referenced blob set across the publication window.
 use crate::{
     backend::{Backend, Kind, ObjectName},
     format::{
@@ -9,18 +9,18 @@ use crate::{
 };
 use std::collections::HashSet;
 
-pub(super) fn referenced_packs<B: Backend>(
+pub(super) fn referenced_blobs<B: Backend>(
     store: &mut BlobStore<'_, B>,
     root: &str,
-) -> Result<HashSet<String>, Error> {
-    let mut packs = HashSet::new();
+) -> Result<HashSet<(BlobKind, String)>, Error> {
+    let mut blobs = HashSet::new();
     let mut visited = HashSet::new();
     let mut work = vec![root.to_owned()];
     while let Some(id) = work.pop() {
         if !visited.insert(id.clone()) {
             continue;
         }
-        record(store, BlobKind::Tree, &id, &mut packs)?;
+        record(store, BlobKind::Tree, &id, &mut blobs)?;
         let bytes = store.read(BlobKind::Tree, &id)?;
         let tree = Tree::parse(&bytes).map_err(|e| Error::Damage {
             object: id,
@@ -32,45 +32,46 @@ pub(super) fn referenced_packs<B: Backend>(
                 Node::Dir { subtree } => work.push(subtree),
                 Node::File { content, .. } => {
                     for id in content {
-                        record(store, BlobKind::Data, &id, &mut packs)?;
+                        record(store, BlobKind::Data, &id, &mut blobs)?;
                     }
                 }
                 Node::Symlink { .. } => {}
             }
         }
     }
-    Ok(packs)
+    Ok(blobs)
 }
 fn record<B>(
     store: &BlobStore<'_, B>,
     kind: BlobKind,
     id: &str,
-    packs: &mut HashSet<String>,
+    blobs: &mut HashSet<(BlobKind, String)>,
 ) -> Result<(), Error> {
-    let location = store
-        .index
-        .get(&(kind, id.to_owned()))
-        .ok_or_else(|| Error::Damage {
+    if !store.index.contains_key(&(kind, id.to_owned())) {
+        return Err(Error::Damage {
             object: id.into(),
             problem: "dangling-reference",
             detail: "snapshot blob has no live index location".into(),
-        })?;
-    packs.insert(location.pack.clone());
+        });
+    }
+    blobs.insert((kind, id.to_owned()));
     Ok(())
 }
+
 pub(super) fn check<B: Backend>(
     repo: &Repository<B>,
     snapshot: &str,
-    expected: &HashSet<String>,
+    expected: &HashSet<(BlobKind, String)>,
 ) -> Result<(), Error> {
     let result = (|| {
+        let live = BlobStore::load(repo)?;
         let present = repo
             .backend
             .list(Kind::Data)?
             .into_iter()
             .map(|e| e.name.as_str()[8..].to_owned())
             .collect::<HashSet<_>>();
-        if !expected.is_subset(&present) {
+        if !live.indexed_blobs_exist(expected, &present) {
             return Err(Error::Refused(
                 "repository was pruned during this backup; rerun".into(),
             ));

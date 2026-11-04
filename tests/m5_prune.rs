@@ -1,11 +1,7 @@
 use keelhaul::{
     backend::{Backend, Kind, local::LocalBackend, memory::MemoryBackend},
     crypto::envelope::Label,
-    format::{
-        pack::BlobKind,
-        snapshot::{Snapshot, Summary},
-        tree::Tree,
-    },
+    format::pack::BlobKind,
     ops::{
         backup::backup,
         check::check,
@@ -21,49 +17,9 @@ use keelhaul::{
     secret::Secret,
 };
 use std::collections::HashSet;
-const TIME: &str = "2024-01-01T00:00:00.000000000Z";
-fn fixture<B: Backend>(backend: B) -> (Repository<B>, String, Vec<Vec<u8>>) {
-    let repo = Repository::init(backend, &Secret::KeyFile([13; 32])).unwrap();
-    let mut store = BlobStore::load(&repo).unwrap();
-    let mut ids = Vec::new();
-    let mut contents = Vec::new();
-    for n in 0..10u64 {
-        let mut bytes = vec![0; 1000];
-        blake3::Hasher::new()
-            .update(&n.to_le_bytes())
-            .finalize_xof()
-            .fill(&mut bytes);
-        ids.push(store.add(BlobKind::Data, &bytes).unwrap());
-        contents.push(bytes);
-    }
-    store.finish().unwrap();
-    let tree = serde_json::json!({"version":1,"entries":[{"name":"%2Ffile","mode":420,"mtime":TIME,"ctime":TIME,"uid":0,"gid":0,"inode":1,"device":1,"links":1,"type":"file","size":7000,"content":ids[..7]}]});
-    let raw = serde_json::to_vec(&tree).unwrap();
-    Tree::parse(&raw).unwrap();
-    let tree = store.add(BlobKind::Tree, &raw).unwrap();
-    store.finish().unwrap();
-    let snapshot = Snapshot {
-        version: 1,
-        time: TIME.into(),
-        host: keelhaul::host::hostname(),
-        username: "test".into(),
-        paths: vec!["/file".into()],
-        tags: vec![],
-        excludes: vec![],
-        tree,
-        parent: None,
-        program: "test".into(),
-        summary: Summary::default(),
-    };
-    let id = repo
-        .write_object(
-            "snapshots",
-            Label::Snapshot,
-            &serde_json::to_vec(&snapshot).unwrap(),
-        )
-        .unwrap();
-    (repo, id, contents)
-}
+#[path = "common/m5_prune_fixture.rs"]
+mod setup;
+use setup::fixture;
 #[test]
 fn thirty_percent_unused_obeys_threshold_and_restores_verified_bytes() {
     let (repo, id, contents) = fixture(MemoryBackend::new());
@@ -236,4 +192,74 @@ fn forget_prune_frees_space_and_kept_snapshot_restores() {
         std::fs::read(target.join(source.strip_prefix("/").unwrap()).join("kept")).unwrap(),
         b"keep me"
     );
+}
+
+#[path = "common/prune_pause.rs"]
+mod trace;
+#[test]
+fn replacement_supersedes_scanned_and_repack_flushed_indexes_exactly() {
+    let (repo, _, _) = fixture(trace::Paused::default());
+    let before = repo
+        .backend
+        .list(Kind::Index)
+        .unwrap()
+        .iter()
+        .map(|e| e.name.as_str()[6..].to_owned())
+        .collect::<HashSet<_>>();
+    repo.backend.index_writes.lock().unwrap().clear();
+    prune(&repo, 20, false).unwrap();
+    let after = repo
+        .backend
+        .list(Kind::Index)
+        .unwrap()
+        .iter()
+        .map(|e| e.name.as_str()[6..].to_owned())
+        .collect::<HashSet<_>>();
+    let written = repo.backend.index_writes.lock().unwrap();
+    let mut expected = before;
+    expected.extend(written.iter().filter(|id| !after.contains(*id)).cloned());
+    let final_id = written.last().unwrap();
+    let final_index = keelhaul::format::index::Index::parse(
+        &repo
+            .read_object(
+                &keelhaul::backend::ObjectName::new(&format!("index/{final_id}")).unwrap(),
+                Label::Index,
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        final_index.supersedes.into_iter().collect::<HashSet<_>>(),
+        expected
+    );
+}
+#[test]
+fn missing_modification_times_retain_orphans_and_temps_and_report_once() {
+    use std::sync::atomic::Ordering;
+    let (repo, _, _) = fixture(trace::Paused::default());
+    let before = repo
+        .backend
+        .list(Kind::Index)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.name)
+        .collect::<HashSet<_>>();
+    let mut writer = BlobStore::load(&repo).unwrap();
+    writer.add(BlobKind::Data, b"orphan").unwrap();
+    writer.finish().unwrap();
+    for entry in repo.backend.list(Kind::Index).unwrap() {
+        if !before.contains(&entry.name) {
+            repo.backend.delete(&entry.name).unwrap();
+        }
+    }
+    let packs = repo.backend.list(Kind::Data).unwrap();
+    repo.backend
+        .inner
+        .plant_raw("config.tmp-0123456789abcdef", b"temp")
+        .unwrap();
+    repo.backend.unknown_times.store(true, Ordering::SeqCst);
+    let summary = prune(&repo, 100, false).unwrap();
+    assert_eq!(summary.warnings.len(), 1);
+    assert_eq!(packs.len(), repo.backend.list(Kind::Data).unwrap().len());
+    assert_eq!(repo.backend.list_foreign(Kind::Config).unwrap().len(), 1);
 }

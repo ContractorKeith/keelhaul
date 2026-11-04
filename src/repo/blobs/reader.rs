@@ -1,6 +1,34 @@
 //! Authenticated ranged reads and complete index/header agreement.
 use super::*;
 impl<B: Backend> BlobStore<'_, B> {
+    pub(crate) fn indexed_blobs_exist(
+        &self,
+        expected: &HashSet<(BlobKind, String)>,
+        present: &HashSet<String>,
+    ) -> bool {
+        // Usually every primary copy exists. Scan alternatives once only when
+        // a referenced primary pack disappeared during a concurrent repack.
+        let mut missing = expected
+            .iter()
+            .filter(|key| {
+                self.index
+                    .get(*key)
+                    .is_none_or(|loc| !present.contains(&loc.pack))
+            })
+            .map(|(kind, id)| (*kind, id.as_str()))
+            .collect::<HashSet<_>>();
+        if missing.is_empty() {
+            return true;
+        }
+        for (pack, (_, blobs)) in &self.headers {
+            if present.contains(pack) {
+                for blob in blobs {
+                    missing.remove(&(blob.kind, blob.id.as_str()));
+                }
+            }
+        }
+        missing.is_empty()
+    }
     pub fn raw_length(&self, kind: BlobKind, id: &str) -> Result<u64, Error> {
         self.index
             .get(&(kind, id.into()))

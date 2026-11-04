@@ -32,11 +32,11 @@ impl<B> FaultBackend<B> {
         }
         let fields = hook.split(':').collect::<Vec<_>>();
         if fields.len() != 3
-            || !["read", "write", "list"].contains(&fields[0])
+            || !["read", "write", "list", "delete"].contains(&fields[0])
             || !["fail", "hang", "panic"].contains(&fields[2])
         {
             return Err(BackendError::InvalidConfig(
-                "fault must be read|write|list:N:fail|hang|panic",
+                "fault must be read|write|list|delete:N:fail|hang|panic",
             ));
         }
         let at = fields[1]
@@ -102,10 +102,14 @@ impl<B: Backend> Backend for FaultBackend<B> {
         self.inner.stat(name)
     }
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError> {
-        self.inner.delete(name)
+        // Delete faults fire after the durable effect. This catches code that
+        // deletes references before publishing their replacement index.
+        self.inner.delete(name)?;
+        self.hit("delete").map_err(|e| self.object_context(name, e))
     }
     fn delete_foreign(&self, raw: &str) -> Result<(), BackendError> {
-        self.inner.delete_foreign(raw)
+        self.inner.delete_foreign(raw)?;
+        self.hit("delete")
     }
     fn contains_destination(&self, path: &Path) -> Result<bool, BackendError> {
         self.inner.contains_destination(path)
@@ -116,12 +120,13 @@ mod tests {
     use super::*;
     #[test]
     fn counts_each_selected_operation_only() {
-        for operation in ["write", "read", "list"] {
+        for operation in ["write", "read", "list", "delete"] {
             let backend = FaultBackend::new(memory::MemoryBackend::new(), operation, 2, false);
             let name = ObjectName::new("config").unwrap();
             let call = || match operation {
                 "write" => backend.write(&name, b"x").map(|_| ()),
                 "read" => backend.read(&name).map(|_| ()),
+                "delete" => backend.delete(&name),
                 _ => backend.list(Kind::Data).map(|_| ()),
             };
             backend.inner.write(&name, b"x").unwrap();

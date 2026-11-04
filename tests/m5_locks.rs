@@ -76,7 +76,7 @@ fn shared_conflicts_refresh_release_and_unlock() {
     assert!(repo.backend.list(Kind::Locks).unwrap().is_empty());
 }
 #[test]
-fn dead_pid_is_ignored_but_fresh_dead_and_live_locks_survive_unlock() {
+fn dead_pid_is_ignored_and_collected_but_fresh_live_locks_survive_unlock() {
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([9; 32])).unwrap();
     let mut dead = Lock::new(true, SystemTime::now()).unwrap();
     dead.pid = 2_000_000_000;
@@ -91,7 +91,7 @@ fn dead_pid_is_ignored_but_fresh_dead_and_live_locks_survive_unlock() {
         lock::unlock(&repo.backend, &keys(&repo), &SystemClock)
             .unwrap()
             .len(),
-        0
+        1
     );
     guard.self_check().unwrap();
     drop(guard);

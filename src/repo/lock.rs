@@ -235,7 +235,7 @@ pub fn unlock<B: Backend>(
 ) -> Result<Vec<String>, Error> {
     let mut removed = Vec::new();
     for (name, lock) in list(backend, keys)? {
-        if lock.stale(clock.now())? {
+        if lock.dead() || lock.stale(clock.now())? {
             backend.delete(&name)?;
             removed.push(name.to_string());
         }

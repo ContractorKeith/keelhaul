@@ -16,7 +16,7 @@ use crate::{
     secret::Secret,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     rc::Rc,
 };
 pub(super) type TreeLocation = (String, String, u64, u64, u64);
@@ -32,6 +32,7 @@ pub(super) struct State<'a, B> {
     pub live: HashMap<BlobKey, Vec<(String, Blob)>>,
     pub used: HashSet<BlobKey>,
     pub bad: HashSet<BlobKey>,
+    pub(super) tree_copy_damage: BTreeSet<crate::damage::Damage>,
     pub(super) tree_cache: HashMap<TreeLocation, Option<Rc<Tree>>>,
 }
 impl<'a, B: Backend> State<'a, B> {
@@ -46,6 +47,7 @@ impl<'a, B: Backend> State<'a, B> {
             live: HashMap::new(),
             used: HashSet::new(),
             bad: HashSet::new(),
+            tree_copy_damage: BTreeSet::new(),
             tree_cache: HashMap::new(),
         }
     }
@@ -84,7 +86,10 @@ impl<'a, B: Backend> State<'a, B> {
                 Tree::parse(&bytes)
                     .map_err(|e| inventory::bad(&blob.id, &format!("{e}; pack {name}")))
             });
+        let previous = self.report.damage.len();
         let tree = self.report.collect(result)?.map(Rc::new);
+        self.tree_copy_damage
+            .extend(self.report.damage[previous..].iter().cloned());
         self.tree_cache.insert(key, tree.clone());
         Ok(tree)
     }

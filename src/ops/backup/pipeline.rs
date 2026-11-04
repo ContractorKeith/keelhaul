@@ -44,7 +44,7 @@ pub(super) fn send(sender: &SyncSender<Result<Event, Error>>, event: Event) -> R
 }
 pub(super) struct Output {
     pub tree: String,
-    pub packs: std::collections::HashSet<String>,
+    pub blobs: std::collections::HashSet<(crate::format::pack::BlobKind, String)>,
     pub paths: Vec<String>,
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
@@ -169,7 +169,7 @@ pub(super) fn run<B: Backend>(
         }
         let (tree, paths) = trees.finish(strings, &mut store)?;
         store.finish()?;
-        let packs = super::publication::referenced_packs(&mut store, &tree)?;
+        let blobs = super::publication::referenced_blobs(&mut store, &tree)?;
         summary.data_blobs_added = store.data_blobs_added;
         summary.bytes_added = store.bytes_added;
         // The sender must be dropped inside the scope, before it joins uploads.
@@ -182,7 +182,7 @@ pub(super) fn run<B: Backend>(
         }
         Ok(Output {
             tree,
-            packs,
+            blobs,
             paths,
             summary,
             skipped,

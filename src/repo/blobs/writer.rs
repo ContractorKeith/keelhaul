@@ -45,6 +45,9 @@ impl<'a, B: Backend> BlobStore<'a, B> {
         writer.headers.clear();
         Ok(writer)
     }
+    pub(crate) fn written_indexes(&self) -> &[String] {
+        &self.flushed_indexes
+    }
     pub fn written_packs(&self) -> Vec<crate::format::index::Pack> {
         self.headers
             .iter()
