@@ -33,7 +33,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: docker compose up -d --wait s3
-      - run: KEELHAUL_E2E=1 cargo test --locked --test e2e_s3
+      - run: docker compose up -d --wait s3 sshd
+      - run: KEELHAUL_E2E=1 cargo test --locked --test e2e_s3 --test e2e_sftp
+      - if: always()
+        run: docker compose logs
       - if: always()
         run: docker compose down -v
