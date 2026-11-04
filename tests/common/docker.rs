@@ -15,3 +15,23 @@ pub fn require_s3() {
         "KEELHAUL_E2E=1 requires versitygw; run docker compose up -d --wait s3"
     );
 }
+
+/// Run one fixture command, retaining stdout and stderr in failure diagnostics.
+pub fn run(command: &mut std::process::Command) -> std::process::Output {
+    let output = command.output().expect("execute test command");
+    assert!(
+        output.status.success(),
+        "{command:?}: {}\n{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    output
+}
+pub fn compose(args: &[&str]) {
+    run(std::process::Command::new("docker")
+        .args(["compose"])
+        .args(args));
+}
+pub fn require_sshd() {
+    compose(&["exec", "-T", "sshd", "true"]);
+}

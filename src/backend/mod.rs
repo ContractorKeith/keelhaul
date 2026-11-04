@@ -6,6 +6,7 @@ mod local_fs;
 mod local_scan;
 pub mod memory;
 pub mod s3;
+pub mod sftp;
 
 use std::{
     fmt, io,

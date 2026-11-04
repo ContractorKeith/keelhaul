@@ -21,9 +21,14 @@ services:
     ports:
       - '127.0.0.1:2222:2222'
     volumes:
-      # M7 creates .tmp/sshd/authorized_keys from a scratch test key.
-      - ./.tmp/sshd:/scratch:ro
+      # Tests override the mount with their scratch key directory.
+      - ${KEELHAUL_SSHD_KEYS:-./.tmp/sshd}:/scratch:ro
       - sshd-config:/config
+    healthcheck:
+      test: ['CMD-SHELL', 'nc -z 127.0.0.1 2222']
+      interval: 1s
+      timeout: 3s
+      retries: 30
 volumes:
   s3-data:
   sshd-config:

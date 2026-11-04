@@ -2,6 +2,7 @@ use crate::backend::{
     Backend, BackendError,
     local::LocalBackend,
     s3::{S3Backend, S3Config, S3Location},
+    sftp::SftpBackend,
 };
 
 // All commands resolve --repo here; version does not open storage.
@@ -18,7 +19,11 @@ pub(super) fn select(
         )?)?));
     }
     if scheme(path) == Some("sftp") {
-        anyhow::bail!("this backend is not implemented yet");
+        return Ok(Box::new(if initializing {
+            SftpBackend::new(path)?
+        } else {
+            SftpBackend::open(path)?
+        }));
     }
     if path.is_empty() || scheme(path).is_some() {
         return Err(BackendError::InvalidConfig(
@@ -64,6 +69,8 @@ mod tests {
             "s3:https://host",
             "s3:ftp://host/bucket",
             "s3:https://host/bucket/a//b",
+            "sftp:host",
+            "sftp://host:bad/repo",
             "https://host/bucket",
             "unknown:repo",
             "",
