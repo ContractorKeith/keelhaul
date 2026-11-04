@@ -1,3 +1,4 @@
+mod audit;
 mod backup;
 mod commands;
 mod repo;
@@ -52,6 +53,11 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub(super) enum Command {
     Version,
+    Check,
+    Verify {
+        #[arg(long)]
+        subset: Option<crate::ops::verify::Subset>,
+    },
     Backup {
         #[arg(required = true)]
         paths: Vec<PathBuf>,

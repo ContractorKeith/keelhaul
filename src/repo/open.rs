@@ -79,6 +79,26 @@ impl<B: Backend> Repository<B> {
             BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
             other => Error::Backend(other),
         })?;
+        let master = Self::unlock(&backend, secret)?;
+        let payload =
+            envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {
+                let problem = if matches!(e, envelope::Error::Undecryptable) {
+                    "undecryptable"
+                } else {
+                    "bad-format"
+                };
+                damage("config", problem, &e.to_string())
+            })?;
+        let config = Config::parse(&payload).map_err(|e| damage("config", "bad-format", &e))?;
+        Ok(Self {
+            backend,
+            config,
+            master,
+        })
+    }
+
+    /// Unlock independently of config so audits can collect config damage too.
+    pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let total = entries.len();
@@ -96,7 +116,7 @@ impl<B: Backend> Repository<B> {
                 break;
             }
         }
-        let master = master.ok_or_else(|| {
+        master.ok_or_else(|| {
             if unreadable.is_empty() {
                 Error::WrongSecret
             } else {
@@ -106,22 +126,11 @@ impl<B: Backend> Repository<B> {
                     objects: unreadable.join(", "),
                 }
             }
-        })?;
-        let payload =
-            envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {
-                let problem = if matches!(e, envelope::Error::Undecryptable) {
-                    "undecryptable"
-                } else {
-                    "bad-format"
-                };
-                damage("config", problem, &e.to_string())
-            })?;
-        let config = Config::parse(&payload).map_err(|e| damage("config", "bad-format", &e))?;
-        Ok(Self {
-            backend,
-            config,
-            master,
         })
+    }
+
+    pub(crate) fn subkeys(&self) -> crate::crypto::keys::Subkeys {
+        self.master.subkeys()
     }
 
     pub fn add_key(&self, secret: &Secret) -> Result<String, Error> {

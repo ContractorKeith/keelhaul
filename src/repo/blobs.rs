@@ -6,7 +6,7 @@ use crate::{
     crypto::envelope::{self, Label},
     format::{
         index::{Index, Pack},
-        pack::{Blob, BlobKind, Header, MAX_HEADER, header_length},
+        pack::{Blob, BlobKind, Header, MAX_HEADER},
     },
 };
 use std::{

@@ -89,12 +89,23 @@ pub(super) fn run<B: Backend>(
             include,
             host,
         } => {
-            let report =
-                ops::restore::restore_for_host(repo, &snap, &target, &include, host.as_deref())?;
+            let report = match ops::restore::restore_for_host(
+                repo,
+                &snap,
+                &target,
+                &include,
+                host.as_deref(),
+            ) {
+                Ok(report) => report,
+                Err(error) => return super::audit::restore_failure(error, json),
+            };
             if json {
                 println!("{}", serde_json::to_string(&report)?);
             } else {
                 println!("restored {} entries", report.restored);
+                for d in &report.damaged {
+                    println!("{d}");
+                }
             }
             if !report.damaged.is_empty() {
                 completed_damage()?;
@@ -116,7 +127,7 @@ fn short_id<'a>(id: &'a str, ids: &[String]) -> &'a str {
     &id[..len]
 }
 
-fn completed_damage() -> std::io::Result<()> {
+pub(super) fn completed_damage() -> std::io::Result<()> {
     // Rendering is complete; avoid main emitting a second JSON document.
     use std::io::Write;
     std::io::stdout().flush()?;
