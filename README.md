@@ -120,12 +120,16 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 `--json` emits one JSON document; `-q/--quiet`, `-v/--verbose` and `--jobs N`
 (default 4) control output and parallelism. See `keelhaul <command> --help` for flags.
 
+A slot with a damaged check tag can still open the repository if its wrapped key
+authenticates config. `key list` labels damaged and unreadable slots. Add a replacement
+slot before removing a damaged one; `check` and `verify` report it until it is removed.
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
 | `init` | Create an encrypted repository. |
-| `key list` | List unlocking slots. |
+| `key list` | List unlocking slots with `ok`, `damaged`, or `unreadable` status. |
 | `key add` | Add a password or `--new-key-file PATH` without rewriting backups. |
 | `key remove <slot-id>` | Remove an unlocking slot, retaining at least one. |
 | `backup <path>...` | Save a snapshot; unchanged chunks are reused. |

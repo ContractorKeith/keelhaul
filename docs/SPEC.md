@@ -89,7 +89,9 @@ A key slot is a plaintext JSON object at `keys/<random id>`:
 plaintext exactly the 32-byte master key (no compression byte). Opening a repository tries
 the supplied secret against every slot. Exactly one secret is supplied per command. Each
 slot is tried in name order until one unwraps and `config` decrypts with the resulting
-master key. If no slot unwraps, this is a wrong-password error (exit 1), not damage.
+master key. If no slot unwraps and every slot is parseable, this is a wrong-password error
+(exit 1), not damage. If no slot opens and any slots are unparseable, report damage
+(exit 3) naming those slots.
 If a slot unwraps but none authenticates `config`, report the config failure.
 
 `check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
@@ -98,6 +100,8 @@ the BLAKE3 keyed hash (key = key-slot check subkey) of these bytes concatenated:
 salt, and finally the decoded `wrapped` bytes. A reader that opened the repository through
 another slot MUST recompute `check` for every slot and report a mismatch as damage of that
 slot. A reader unlocking through a slot verifies its `check` after unwrapping.
+A check mismatch is damage of that slot: warn, but allow opening when its unwrapped
+master key authenticates `config`. `check` and `verify` report the mismatch as damage.
 
 Removing a slot is refused unless another slot has a valid `check` under this
 repository’s master key. A repository never stores the master key unwrapped.

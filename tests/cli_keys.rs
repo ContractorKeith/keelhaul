@@ -60,7 +60,7 @@ fn password_to_keyfile_rotation_and_json_contract() {
     assert_eq!(created.len(), 30);
     assert_eq!(
         listed,
-        json!({"slots":[{"id":original_id,"kind":"password","created":created,"host":gethostname::gethostname().to_string_lossy(),"username":keelhaul::host::username()}]})
+        json!({"slots":[{"id":original_id,"status":"ok","kind":"password","created":created,"host":gethostname::gethostname().to_string_lossy(),"username":keelhaul::host::username()}]})
     );
     let key = root.join("new-key");
     let added = success(cli(

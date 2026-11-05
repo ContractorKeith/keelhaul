@@ -78,6 +78,13 @@ pub(crate) fn wrap(
 }
 
 pub fn unwrap(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
+    let master = unwrap_master(slot, secret)?;
+    verify_check(slot, &master.subkeys().key_slot_check)?;
+    Ok(master)
+}
+
+// Config authentication, rather than this redundant tag, authorizes recovery.
+pub(crate) fn unwrap_master(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
     if slot.kind != secret.kind() {
         return Err(Error::WrongKind);
     }
@@ -89,9 +96,7 @@ pub fn unwrap(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
     let master = plaintext
         .try_into()
         .map_err(|_| Error::BadFormat("invalid master key length".into()))?;
-    let master = MasterKey(master);
-    verify_check(slot, &master.subkeys().key_slot_check)?;
-    Ok(master)
+    Ok(MasterKey(master))
 }
 
 /// SPEC §3 framing, independent of the secret that wraps this slot.

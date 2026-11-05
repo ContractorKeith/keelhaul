@@ -39,7 +39,7 @@ fn non_opening_slots_authenticate_wrapped_tag_and_cost_without_their_secret() {
     }
 }
 #[test]
-fn unlock_rejects_a_bad_check_after_successful_unwrapping() {
+fn unlock_recovers_a_bad_check_after_config_authentication() {
     let secret = Secret::KeyFile([7; 32]);
     let repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
     let (id, slot) = repo.list_keys().unwrap().pop().unwrap();
@@ -48,13 +48,14 @@ fn unlock_rejects_a_bad_check_after_successful_unwrapping() {
     repo.backend
         .plant_raw(&format!("keys/{id}"), &serde_json::to_vec(&value).unwrap())
         .unwrap();
-    assert!(matches!(
-        Repository::open(repo.backend, &secret),
-        Err(keelhaul::repo::Error::Damage {
-            problem: "hash-mismatch",
-            ..
-        })
-    ));
+    let opened = Repository::open(repo.backend, &secret).unwrap();
+    let report = check(&opened).unwrap();
+    assert!(
+        report
+            .damage
+            .iter()
+            .any(|d| d.object == format!("keys/{id}") && d.problem == "hash-mismatch")
+    );
 }
 
 #[test]

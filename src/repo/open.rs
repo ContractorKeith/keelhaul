@@ -15,14 +15,6 @@ pub enum Error {
     Backend(#[from] BackendError),
     #[error("wrong secret: no key slot matches")]
     WrongSecret,
-    #[error(
-        "wrong secret: no key slot matches ({unreadable} of {total} slots unreadable: {objects})"
-    )]
-    WrongSecretUnreadable {
-        unreadable: usize,
-        total: usize,
-        objects: String,
-    },
     #[error("damage: {object}: {problem}: {}", damage_detail(.object, .problem, .detail))]
     Damage {
         object: String,
@@ -105,10 +97,8 @@ impl<B: Backend> Repository<B> {
     pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
-        let total = entries.len();
         let mut unreadable = Vec::new();
         let mut master = None;
-        let mut bad_check = None;
         let config = match backend.read(&ObjectName::new("config")?) {
             Ok(bytes) => Some(bytes),
             Err(BackendError::NotFound(_)) => None,
@@ -121,35 +111,38 @@ impl<B: Backend> Repository<B> {
                 unreadable.push(entry.name.to_string());
                 continue;
             };
-            match slot::unwrap(&slot, secret) {
-                Ok(key) => {
-                    if config.as_ref().is_some_and(|bytes| {
-                        envelope::open(&key.subkeys().encryption, Label::Config, bytes).is_ok()
-                    }) {
-                        return Ok(key);
+            if let Ok(key) = slot::unwrap_master(&slot, secret) {
+                if config.as_ref().is_some_and(|bytes| {
+                    envelope::open(&key.subkeys().encryption, Label::Config, bytes).is_ok()
+                }) {
+                    if slot::verify_check(&slot, &key.subkeys().key_slot_check).is_err() {
+                        eprintln!(
+                            "warning: {}",
+                            damage(
+                                entry.name.as_str(),
+                                "hash-mismatch",
+                                "key slot check differs"
+                            )
+                        );
                     }
-                    // Preserve an unwrapped key for audits of a damaged config. Open
-                    // still authenticates and parses config before accepting this key.
-                    if master.is_none() {
-                        master = Some(key);
-                    }
+                    return Ok(key);
                 }
-                Err(slot::Error::CheckMismatch) => bad_check = Some(entry.name.to_string()),
-                Err(_) => {}
+                // Preserve an unwrapped key for audits of a damaged config. Open
+                // still authenticates and parses config before accepting this key.
+                if master.is_none() {
+                    master = Some(key);
+                }
             }
         }
         master.ok_or_else(|| {
-            if let Some(object) = bad_check {
-                return damage(&object, "hash-mismatch", "key slot check differs");
-            }
             if unreadable.is_empty() {
                 Error::WrongSecret
             } else {
-                Error::WrongSecretUnreadable {
-                    unreadable: unreadable.len(),
-                    total,
-                    objects: unreadable.join(", "),
-                }
+                damage(
+                    &unreadable.join(", "),
+                    "bad-format",
+                    "no slot opens; key slots are unreadable",
+                )
             }
         })
     }
@@ -168,16 +161,29 @@ impl<B: Backend> Repository<B> {
         Ok(id)
     }
 
-    pub fn list_keys(&self) -> Result<Vec<(String, KeySlot)>, Error> {
+    pub fn scan_keys(&self) -> Result<Vec<(String, Option<KeySlot>)>, Error> {
         let mut entries = self.backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         entries
             .into_iter()
             .map(|entry| {
                 let bytes = self.backend.read(&entry.name)?;
-                let slot = KeySlot::parse(&bytes)
-                    .map_err(|e| damage(entry.name.as_str(), "bad-format", &e))?;
-                Ok((entry.name.as_str()[5..].to_owned(), slot))
+                Ok((
+                    entry.name.as_str()[5..].to_owned(),
+                    KeySlot::parse(&bytes).ok(),
+                ))
+            })
+            .collect()
+    }
+
+    pub fn list_keys(&self) -> Result<Vec<(String, KeySlot)>, Error> {
+        self.scan_keys()?
+            .into_iter()
+            .map(|(id, slot)| {
+                let slot = slot.ok_or_else(|| {
+                    damage(&format!("keys/{id}"), "bad-format", "unreadable key slot")
+                })?;
+                Ok((id, slot))
             })
             .collect()
     }
@@ -189,12 +195,15 @@ impl<B: Backend> Repository<B> {
     }
 
     fn remove_key_locked(&self, id: &str) -> Result<(), Error> {
-        let slots = self.list_keys()?;
+        let slots = self.scan_keys()?;
         if !slots.iter().any(|(found, _)| found == id) {
             return Err(Error::Refused(format!("key slot {id} not found")));
         }
         if !slots.iter().any(|(found, slot)| {
-            found != id && slot::verify_check(slot, &self.subkeys().key_slot_check).is_ok()
+            found != id
+                && slot.as_ref().is_some_and(|slot| {
+                    slot::verify_check(slot, &self.subkeys().key_slot_check).is_ok()
+                })
         }) {
             return Err(Error::Refused(
                 "cannot remove the last key slot with a valid check tag for this repository".into(),

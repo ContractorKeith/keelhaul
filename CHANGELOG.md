@@ -2,6 +2,9 @@
 
 ## Unreleased fixes
 
+- Open through a damaged slot check after config authentication; list unreadable slots
+  and allow key rotation while retaining a verified slot.
+
 - Collapse nested backup roots and share root validation across check, verify and restore;
   restore unaffected subtrees when a snapshot has overlapping roots.
 - Read hardlink groups once; restore disagreeing legacy groups independently.
