@@ -109,6 +109,11 @@ impl<B: Backend> Repository<B> {
         let mut unreadable = Vec::new();
         let mut master = None;
         let mut bad_check = None;
+        let config = match backend.read(&ObjectName::new("config")?) {
+            Ok(bytes) => Some(bytes),
+            Err(BackendError::NotFound(_)) => None,
+            Err(error) => return Err(error.into()),
+        };
         for entry in entries {
             let bytes = backend.read(&entry.name)?;
             // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
@@ -118,8 +123,16 @@ impl<B: Backend> Repository<B> {
             };
             match slot::unwrap(&slot, secret) {
                 Ok(key) => {
-                    master = Some(key);
-                    break;
+                    if config.as_ref().is_some_and(|bytes| {
+                        envelope::open(&key.subkeys().encryption, Label::Config, bytes).is_ok()
+                    }) {
+                        return Ok(key);
+                    }
+                    // Preserve an unwrapped key for audits of a damaged config. Open
+                    // still authenticates and parses config before accepting this key.
+                    if master.is_none() {
+                        master = Some(key);
+                    }
                 }
                 Err(slot::Error::CheckMismatch) => bad_check = Some(entry.name.to_string()),
                 Err(_) => {}

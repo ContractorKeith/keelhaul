@@ -88,7 +88,8 @@ A key slot is a plaintext JSON object at `keys/<random id>`:
 `wrapped` is an envelope (§4) under the KEK with associated data `keelhaul/key-slot` and
 plaintext exactly the 32-byte master key (no compression byte). Opening a repository tries
 the supplied secret against every slot. Exactly one secret is supplied per command. Each
-slot is tried in name order until one decrypts. No slot decrypting is a wrong-password
+slot is tried in name order until one unwraps and `config` decrypts with the resulting
+master key. No slot decrypting is a wrong-password
 error (exit 1), not damage.
 
 `check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
