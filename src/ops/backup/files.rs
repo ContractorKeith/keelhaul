@@ -14,8 +14,7 @@ use crate::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    fs,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    os::unix::fs::MetadataExt,
     sync::{Mutex, mpsc::SyncSender},
 };
 
@@ -90,11 +89,7 @@ fn read_one(
         reuse: _,
     } = task;
     // User file failures are skips; storage/pipeline failures abort the backup.
-    let file = match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
-        .open(&path)
-    {
+    let file = match super::resources::open_file(&path) {
         Ok(f) => f,
         Err(e) => {
             super::resources::check(&path, &e)?;

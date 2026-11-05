@@ -14,6 +14,7 @@ echo "== gate"
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+cargo test --locked --features fault-injection --test backup_resources
 
 echo "== build"
 cargo build --locked --release

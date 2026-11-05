@@ -112,7 +112,9 @@ pub(super) fn run<B: Backend>(
             let seen = &seen;
             let hardlinks = &hardlinks;
             thread::Builder::new().spawn_scoped(scope, move || {
-                workers::run("file", events.clone(), move || {
+                // Keep the task receiver alive until the primary error is reported.
+                // Otherwise the walker can report cancellation before the I/O cause.
+                workers::run("file", events.clone(), || {
                     while let Some(task) = workers::receive(&receiver, "file")? {
                         files::read(task, &gear, &keys, seen, hardlinks, &events)?;
                     }

@@ -2,6 +2,14 @@
 
 ## Unreleased fixes
 
+- Collapse nested backup roots and share root validation across check, verify and restore;
+  restore unaffected subtrees when a snapshot has overlapping roots.
+- Read hardlink groups once; restore disagreeing legacy groups independently.
+- Exit 5 for incomplete snapshots and add `incomplete` to backup JSON.
+- Bound S3 attempts to 20 seconds and operations across retries to 120 seconds by default.
+- Warn when a backup root is a symlink; follow it with an explicit trailing slash.
+- Exercise runtime descriptor exhaustion with a feature-gated file-open fault hook.
+
 - Stop queued backup uploads when the repository lock disappears or refresh fails.
 
 - Add `backup --heal` to verify indexed chunks and replace damaged copies before prune.

@@ -13,7 +13,17 @@ pub(super) fn jobs(jobs: usize) -> Result<(), Error> {
 }
 
 pub(super) fn check(path: &Path, error: &io::Error) -> Result<(), Error> {
-    if error.raw_os_error().is_some_and(|code| {
+    if fatal_errno(error.raw_os_error()) {
+        return Err(Error::Refused(format!(
+            "{}: {error}; lower --jobs or raise ulimit -n; no snapshot written",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn fatal_errno(code: Option<i32>) -> bool {
+    code.is_some_and(|code| {
         [
             rustix::io::Errno::MFILE,
             rustix::io::Errno::NFILE,
@@ -21,13 +31,29 @@ pub(super) fn check(path: &Path, error: &io::Error) -> Result<(), Error> {
         ]
         .iter()
         .any(|errno| errno.raw_os_error() == code)
-    }) {
-        return Err(Error::Refused(format!(
-            "{}: {error}; lower --jobs or raise ulimit -n; no snapshot written",
-            path.display()
-        )));
+    })
+}
+
+pub(super) fn open_file(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    #[cfg(feature = "fault-injection")]
+    {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static OPENS: AtomicUsize = AtomicUsize::new(0);
+        if let Some(nth) = std::env::var("KEELHAUL_TEST_EMFILE_AT_OPEN")
+            .ok()
+            .and_then(|n| n.parse::<usize>().ok())
+            && OPENS.fetch_add(1, Ordering::SeqCst) + 1 == nth
+        {
+            return Err(io::Error::from_raw_os_error(
+                rustix::io::Errno::MFILE.raw_os_error(),
+            ));
+        }
     }
-    Ok(())
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
+        .open(path)
 }
 
 #[cfg(test)]
@@ -53,6 +79,7 @@ mod tests {
             rustix::io::Errno::NOENT,
             rustix::io::Errno::LOOP,
             rustix::io::Errno::NOTDIR,
+            rustix::io::Errno::NAMETOOLONG,
         ] {
             assert!(
                 check(
