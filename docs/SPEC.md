@@ -97,9 +97,8 @@ If a slot unwraps but none authenticates `config`, report the config failure.
 `check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
 the BLAKE3 keyed hash (key = key-slot check subkey) of these bytes concatenated: the ASCII
 `kind`, one `0x00` byte, then for a password slot `m_kib`, `t`, `p` as u32 LE and the decoded
-salt, and finally the decoded `wrapped` bytes. A reader that opened the repository through
-another slot MUST recompute `check` for every slot and report a mismatch as damage of that
-slot. A reader unlocking through a slot verifies its `check` after unwrapping.
+salt, and finally the decoded `wrapped` bytes. Audits (`check`, `verify` and `key list`) MUST recompute `check` for every slot
+and report a mismatch as damage of that slot. A reader unlocking through a slot verifies its `check` after unwrapping.
 A check mismatch is damage of that slot: warn, but allow opening when its unwrapped
 master key authenticates `config`. `check` and `verify` report the mismatch as damage.
 
@@ -365,7 +364,7 @@ A lock object is an envelope (label `keelhaul/lock`) whose payload is:
 | Operation | Lock |
 |---|---|
 | backup, restore, check, verify, snapshots, ls | shared |
-| forget, prune, key remove | exclusive |
+| forget, prune, key remove, rebuild-index (including --dry-run) | exclusive |
 | init, key add, key list, unlock | none |
 
 ## 12. Test vectors
