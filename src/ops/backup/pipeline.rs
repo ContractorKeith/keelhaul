@@ -32,6 +32,7 @@ pub(super) enum Event {
     Directory((usize, PathBuf), Box<Entry>, usize),
     Skip((usize, PathBuf), PathBuf, String),
     Ignored((usize, PathBuf)),
+    Unsupported((usize, PathBuf), PathBuf),
     Warning(PathBuf, String),
     Read,
     ChangedDuringRead(PathBuf),
@@ -76,6 +77,7 @@ pub(super) fn run<B: Backend>(
             .cloned()
             .collect(),
     );
+    let hardlinks = files::Hardlinks::default();
     let keys = store.worker_keys();
     let gear = repo.chunker_key();
     thread::scope(|scope| {
@@ -108,10 +110,13 @@ pub(super) fn run<B: Backend>(
             let receiver = tasks_rx.clone();
             let events = events_tx.clone();
             let seen = &seen;
+            let hardlinks = &hardlinks;
             thread::Builder::new().spawn_scoped(scope, move || {
-                workers::run("file", events.clone(), move || {
+                // Keep the task receiver alive until the primary error is reported.
+                // Otherwise the walker can report cancellation before the I/O cause.
+                workers::run("file", events.clone(), || {
                     while let Some(task) = workers::receive(&receiver, "file")? {
-                        files::read(task, &gear, &keys, seen, &events)?;
+                        files::read(task, &gear, &keys, seen, hardlinks, &events)?;
                     }
                     Ok(())
                 });
@@ -169,6 +174,13 @@ pub(super) fn run<B: Backend>(
                 Event::Directory(key, entry, count) => {
                     summary.dirs += 1;
                     trees.directory(key, *entry, count, &mut store)?;
+                }
+                Event::Unsupported(key, path) => {
+                    summary.files_skipped += 1;
+                    let mut item = super::skipped(&path, "unsupported file type");
+                    item.required = false;
+                    skipped.push(item);
+                    trees.complete(key, None, &mut store)?;
                 }
                 Event::Ignored(key) => trees.complete(key, None, &mut store)?,
                 Event::Warning(path, reason) => {

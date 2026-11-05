@@ -21,15 +21,21 @@ use crate::{
 };
 pub use excludes::Patterns;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Serialize)]
 pub struct Skipped {
+    #[serde(skip)]
+    pub(crate) required: bool,
     pub path: String,
     pub reason: String,
 }
 #[derive(Debug, Serialize)]
 pub struct Report {
+    pub incomplete: bool,
     pub snapshot: String,
     pub summary: ReportSummary,
     pub skipped: Vec<Skipped>,
@@ -74,6 +80,7 @@ fn skipped(path: &Path, reason: impl ToString) -> Skipped {
     let reason = reason.to_string();
     eprintln!("warning: {}: {reason}", path.display());
     Skipped {
+        required: true,
         path: path.to_string_lossy().into_owned(),
         reason,
     }
@@ -130,7 +137,12 @@ fn backup_locked<B: Backend>(
     let mut failures = Vec::new();
     let mut roots = Vec::new();
     for input in paths {
-        let normalized = match absolute(input) {
+        let follow = input.as_os_str().as_bytes().ends_with(b"/");
+        let normalized = match if follow {
+            std::fs::canonicalize(input)
+        } else {
+            absolute(input)
+        } {
             Ok(path) => path,
             Err(error) => {
                 resources::check(input, &error)?;
@@ -146,15 +158,39 @@ fn backup_locked<B: Backend>(
                 continue;
             }
         };
+        if meta.is_symlink() {
+            eprintln!(
+                "warning: {} is a symlink; storing the link only (add a trailing / to back up what it points to)",
+                normalized.display()
+            );
+        }
         let candidate = normalized.file_name().map(Path::new).unwrap_or(&normalized);
         if patterns.excluded(candidate, meta.is_dir()) {
-            failures.push(skipped(input, "excluded by pattern"));
+            let mut excluded = skipped(input, "excluded by pattern");
+            excluded.required = false;
+            failures.push(excluded);
             continue;
         }
         roots.push((normalized, input));
     }
     roots.sort_by(|a, b| a.0.cmp(&b.0));
     roots.dedup_by(|a, b| a.0 == b.0);
+    let mut covering: Vec<(PathBuf, &PathBuf)> = Vec::new();
+    for root in roots {
+        if let Some((parent, _)) = covering
+            .iter()
+            .find(|(parent, _)| root.0.starts_with(parent))
+        {
+            eprintln!(
+                "warning: {} is inside {}; backing it up once",
+                root.0.display(),
+                parent.display()
+            );
+        } else {
+            covering.push(root);
+        }
+    }
+    let roots = covering;
     if roots.is_empty() {
         return Err(Error::Refused(
             "no backup roots could be read; no snapshot written".into(),
@@ -201,6 +237,7 @@ fn backup_locked<B: Backend>(
     )?;
     publication::check(repo, &id, &result.blobs)?;
     Ok(Report {
+        incomplete: failures.iter().any(|entry| entry.required),
         snapshot: id,
         summary: ReportSummary {
             totals: summary,

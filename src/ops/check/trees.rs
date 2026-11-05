@@ -1,9 +1,6 @@
 //! Audit the DAG once; expand only branches that need per-file damage attribution.
 use super::*;
-use crate::format::{
-    snapshot::decode_root,
-    tree::{Entry, Node},
-};
+use crate::format::tree::{Entry, Node};
 use std::{
     collections::VecDeque,
     ffi::OsString,
@@ -21,18 +18,11 @@ pub(super) fn walk<B: Backend>(state: &mut State<'_, B>, verify: bool) -> Result
     let mut issues = Issues::new();
     for (_, s) in state.snapshots.clone() {
         if let Some(tree) = state.tree(&s.tree)? {
-            let paths = tree
-                .entries
-                .iter()
-                .filter_map(|e| e.name.as_deref().and_then(|n| decode_root(n).ok()))
-                .collect::<HashSet<_>>();
-            if paths != s.paths.iter().cloned().collect() {
-                state.report.add(
-                    &s.tree,
-                    "tree",
-                    "bad-format",
-                    "root entries differ from snapshot paths",
-                );
+            let shape = crate::format::snapshot_shape::validate(&s, &tree);
+            if !shape.problems.is_empty() {
+                state
+                    .report
+                    .add(&s.tree, "tree", "bad-format", &shape.problems.join("; "));
             }
         }
         let mut active = HashSet::new();
@@ -184,23 +174,11 @@ fn entry_path<B: Backend>(
     paths: &[String],
 ) -> Result<Option<PathBuf>, Error> {
     if root {
-        let decoded = entry
-            .name
-            .as_deref()
-            .ok_or_else(|| inventory::bad(id, "root name is not UTF-8"))
-            .and_then(|n| decode_root(n).map_err(|e| inventory::bad(id, &e.to_string())));
+        let decoded = crate::format::snapshot_shape::root_path(paths, entry)
+            .map_err(|problem| inventory::bad(id, &problem));
         let Some(path) = state.report.collect(decoded)? else {
             return Ok(None);
         };
-        if !paths.contains(&path) {
-            state.report.add(
-                id,
-                "tree",
-                "bad-format",
-                "root entry absent from snapshot paths",
-            );
-            return Ok(None);
-        }
         Ok(Some(PathBuf::from(path)))
     } else {
         Ok(state

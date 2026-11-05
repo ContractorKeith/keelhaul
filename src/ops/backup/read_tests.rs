@@ -28,6 +28,7 @@ fn append_during_read_keeps_bytes_and_open_metadata() {
         key: (0, path.clone()),
         entry,
         changed: false,
+        reuse: false,
         previous_content: None,
     };
     let (tx, rx) = mpsc::sync_channel(0);
@@ -38,6 +39,7 @@ fn append_during_read_keeps_bytes_and_open_metadata() {
                 &[7; 32],
                 &([8; 32], [9; 32]),
                 &Mutex::new(HashSet::new()),
+                &files::Hardlinks::default(),
                 &tx,
             )
         });

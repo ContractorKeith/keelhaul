@@ -59,3 +59,5 @@ pub(crate) fn require(ok: bool, message: &str) -> Result<(), ParseError> {
         Err(ParseError(message.into()))
     }
 }
+
+pub mod snapshot_shape;

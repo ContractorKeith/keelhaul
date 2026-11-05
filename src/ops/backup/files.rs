@@ -5,38 +5,91 @@ use super::{
 use crate::{
     chunker::Chunker,
     crypto::envelope,
-    format::{pack::BlobKind, tree::Node},
+    format::{
+        pack::BlobKind,
+        tree::{Entry, Node},
+    },
     ops::metadata,
     repo::{Error, blobs::SealedBlob},
 };
 use std::{
-    collections::HashSet,
-    fs,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    collections::{HashMap, HashSet},
+    os::unix::fs::MetadataExt,
     sync::{Mutex, mpsc::SyncSender},
 };
 
 pub(super) type Seen = Mutex<HashSet<(BlobKind, String)>>;
+pub(super) type Hardlinks = Mutex<HashMap<(u64, u64), Entry>>;
 pub(super) fn read(
     task: FileTask,
     gear: &[u8; 32],
     keys: &([u8; 32], [u8; 32]),
     seen: &Seen,
+    hardlinks: &Hardlinks,
     events: &SyncSender<Result<Event, Error>>,
 ) -> Result<(), Error> {
+    if task.entry.links > 1 {
+        // Serialize linked inode reads so every alias gets one descriptor's metadata and bytes.
+        let mut groups = hardlinks
+            .lock()
+            .map_err(|_| Error::Refused("hardlink cache mutex poisoned".into()))?;
+        let inode = (task.entry.device, task.entry.inode);
+        if let Some(first) = groups.get(&inode) {
+            let mut entry = first.clone();
+            entry.name = task.entry.name;
+            entry.name_b64 = task.entry.name_b64;
+            return send(
+                events,
+                Event::Entry(
+                    task.key,
+                    Box::new(entry),
+                    if task.previous_content.as_ref().is_some_and(
+                        |old| matches!(&first.node, Node::File { content, .. } if content == old),
+                    ) {
+                        Status::Unchanged
+                    } else if task.changed {
+                        Status::Changed
+                    } else {
+                        Status::New
+                    },
+                ),
+            );
+        }
+        let mut saved = None;
+        read_one(task, gear, keys, seen, events, &mut saved)?;
+        if let Some(entry) = saved {
+            groups.insert(inode, entry);
+        }
+        Ok(())
+    } else {
+        read_one(task, gear, keys, seen, events, &mut None)
+    }
+}
+fn read_one(
+    task: FileTask,
+    gear: &[u8; 32],
+    keys: &([u8; 32], [u8; 32]),
+    seen: &Seen,
+    events: &SyncSender<Result<Event, Error>>,
+    saved: &mut Option<Entry>,
+) -> Result<(), Error> {
+    if task.reuse {
+        *saved = Some(task.entry.clone());
+        return send(
+            events,
+            Event::Entry(task.key, Box::new(task.entry), Status::Unchanged),
+        );
+    }
     let FileTask {
         path,
         key,
         mut entry,
         changed,
         previous_content,
+        reuse: _,
     } = task;
     // User file failures are skips; storage/pipeline failures abort the backup.
-    let file = match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
-        .open(&path)
-    {
+    let file = match super::resources::open_file(&path) {
         Ok(f) => f,
         Err(e) => {
             super::resources::check(&path, &e)?;
@@ -110,6 +163,7 @@ pub(super) fn read(
     }
     let unchanged = previous_content.as_ref() == Some(&content);
     entry.node = Node::File { size, content };
+    *saved = Some(entry.clone());
     send(
         events,
         Event::Entry(

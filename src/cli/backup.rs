@@ -54,6 +54,15 @@ pub(super) fn run<B: Backend>(
                     report.summary.files_skipped
                 );
             }
+            if report.incomplete {
+                eprintln!(
+                    "snapshot written; {} entries skipped",
+                    report.skipped.iter().filter(|entry| entry.required).count()
+                );
+                use std::io::Write;
+                std::io::stdout().flush()?;
+                std::process::exit(crate::exit::code(Err(crate::exit::Failure::Incomplete)) as i32);
+            }
         }
         Command::Snapshots { host, tag, path } => {
             let path = path
