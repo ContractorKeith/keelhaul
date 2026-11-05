@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Default, Serialize)]
 pub struct Report {
     pub restored: u64,
+    pub snapshot: String,
     #[serde(rename = "damage")]
     pub damaged: Vec<crate::damage::Damage>,
     pub failed: Vec<Failure>,
@@ -79,12 +80,15 @@ fn restore_with_hook<B: Backend>(
     host: Option<&str>,
     mut before_entry: impl FnMut(&Path),
 ) -> Result<Report, Error> {
-    let (snapshot_id, snapshot) = super::listing::select_snapshot_for_host(repo, selector, host)?;
+    let (snapshot_id, snapshot, damage) =
+        super::listing::select_snapshot_for_host(repo, selector, host)?;
     let mut store = BlobStore::load_quiet(repo)?;
     let mut report = Report {
         damaged: store.damage.clone(),
         ..Report::default()
     };
+    report.snapshot = snapshot_id.clone();
+    report.damaged.extend(damage);
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)
         .map_err(|error| Error::Refused(format!("{}: {error}", target.display())))?;

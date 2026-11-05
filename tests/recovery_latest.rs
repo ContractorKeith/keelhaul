@@ -33,3 +33,30 @@ fn latest_names_all_damaged_snapshots_and_counts_only_readable_hosts() {
         "{text}"
     );
 }
+
+#[test]
+fn latest_retains_damage_when_an_older_snapshot_is_readable() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(dir.path()).unwrap().join("file");
+    let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
+    std::fs::write(&source, b"first").unwrap();
+    let first = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+    std::fs::write(&source, b"other").unwrap();
+    let newest = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+    let name =
+        keelhaul::backend::ObjectName::new(&format!("snapshots/{}", newest.snapshot)).unwrap();
+    let mut bytes = repo.backend.read(&name).unwrap();
+    bytes[24] ^= 1;
+    repo.backend.plant_raw(name.as_str(), &bytes).unwrap();
+    let target = dir.path().join("out");
+    let report = restore(&repo, "latest", &target, &[]).unwrap();
+    assert_eq!(report.snapshot, first.snapshot);
+    assert!(report.damaged.iter().any(|d| d.object == name.as_str()));
+    assert_eq!(
+        std::fs::read(target.join(source.strip_prefix("/").unwrap())).unwrap(),
+        b"first"
+    );
+    let listed = keelhaul::ops::listing::ls_report_for_host(&repo, "latest", None, None).unwrap();
+    assert_eq!(listed.snapshot, first.snapshot);
+    assert!(listed.damage.iter().any(|d| d.object == name.as_str()));
+}

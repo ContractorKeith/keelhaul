@@ -45,7 +45,10 @@ pub(super) fn restore<B: crate::backend::Backend>(
     if json {
         println!("{}", serde_json::to_string(&report)?);
     } else {
-        println!("restored {} entries", report.restored);
+        println!(
+            "restored {} entries from snapshot {}",
+            report.restored, report.snapshot
+        );
         for damage in &report.damaged {
             eprintln!("{damage}");
         }
@@ -77,8 +80,15 @@ pub(super) fn listing<B: crate::backend::Backend>(
         crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?
     };
     if json {
-        println!("{}", serde_json::to_string(&report.entries)?);
+        if report.damage.is_empty() {
+            println!("{}", serde_json::to_string(&report.entries)?);
+        } else {
+            println!("{}", serde_json::to_string(&report)?);
+        }
     } else {
+        if selector == "latest" && !report.damage.is_empty() {
+            eprintln!("using snapshot {}", report.snapshot);
+        }
         for entry in &report.entries {
             println!(
                 "{}{}",
