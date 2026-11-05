@@ -21,7 +21,8 @@ scripts/accept.sh                       # the acceptance: worker, reviewer and C
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked                     # unit, property, conformance, damage harness (in-memory + local)
-KEELHAUL_E2E=1 cargo test --locked --test e2e   # needs `docker compose up -d` (versitygw, sshd); fails if Docker is down
+docker compose up -d --wait s3 sshd
+KEELHAUL_E2E=1 cargo test --locked --test e2e_s3 --test e2e_sftp   # fails if Docker is down
 KEELHAUL_SOAK=1 cargo test --locked --release --test crash   # 500-iteration crash loops
 cargo build --release                   # target/release/keelhaul
 ```
