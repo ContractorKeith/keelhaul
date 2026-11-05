@@ -1,4 +1,6 @@
 //! Seeded process kills with explicit durability and flushed-index reuse assertions.
+#[path = "common/seed.rs"]
+mod seed;
 #[path = "common/crash_support.rs"]
 mod support;
 use keelhaul::{
@@ -136,10 +138,7 @@ fn exercise(root: &Path, delay: Duration, fault: Option<(&str, Kind, usize)>) ->
 }
 #[test]
 fn seeded_sigkill_backup_loop() {
-    let seed = std::env::var("KEELHAUL_SEED")
-        .ok()
-        .map(|s| s.parse::<u64>().expect("numeric seed"))
-        .unwrap_or(0x4b45454c);
+    let seed = seed::seed();
     let iterations = if std::env::var_os("KEELHAUL_SOAK").is_some() {
         500
     } else {

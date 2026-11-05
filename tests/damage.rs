@@ -3,6 +3,8 @@
 #[path = "common/backup_fixture.rs"]
 #[allow(dead_code, reason = "shared round-trip helpers")]
 mod backup_fixture;
+#[path = "common/seed.rs"]
+mod seed;
 #[path = "damage_support/mod.rs"]
 mod support;
 #[test]
@@ -19,9 +21,11 @@ fn seeded_damage_exact_sets() {
     } else {
         20
     };
-    let seeds = match std::env::var("KEELHAUL_SEED") {
-        Ok(s) => vec![s.parse::<u64>().unwrap()],
-        Err(_) => (0..count).collect(),
+    let first = seed::seed();
+    let seeds: Vec<_> = if std::env::var_os("KEELHAUL_SEED").is_some() {
+        vec![first]
+    } else {
+        (0..count).map(|n| first.wrapping_add(n)).collect()
     };
     let n = seeds.len();
     for seed in seeds {

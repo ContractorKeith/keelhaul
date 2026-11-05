@@ -25,10 +25,7 @@ fn verify(root: &Path) {
 }
 #[test]
 fn seeded_sigkill_prune_loop_and_backup_exclusion() {
-    let seed = std::env::var("KEELHAUL_SEED")
-        .ok()
-        .map(|s| s.parse::<u64>().unwrap())
-        .unwrap_or(0x5052554e45);
+    let seed = crate::seed::seed();
     let iterations = if std::env::var_os("KEELHAUL_SOAK").is_some() {
         500
     } else {
