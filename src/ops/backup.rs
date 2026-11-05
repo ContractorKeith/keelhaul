@@ -21,7 +21,10 @@ use crate::{
 };
 pub use excludes::Patterns;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Serialize)]
 pub struct Skipped {
@@ -134,7 +137,12 @@ fn backup_locked<B: Backend>(
     let mut failures = Vec::new();
     let mut roots = Vec::new();
     for input in paths {
-        let normalized = match absolute(input) {
+        let follow = input.as_os_str().as_bytes().ends_with(b"/");
+        let normalized = match if follow {
+            std::fs::canonicalize(input)
+        } else {
+            absolute(input)
+        } {
             Ok(path) => path,
             Err(error) => {
                 resources::check(input, &error)?;
@@ -150,6 +158,12 @@ fn backup_locked<B: Backend>(
                 continue;
             }
         };
+        if meta.is_symlink() {
+            eprintln!(
+                "warning: {} is a symlink; storing the link only (add a trailing / to back up what it points to)",
+                normalized.display()
+            );
+        }
         let candidate = normalized.file_name().map(Path::new).unwrap_or(&normalized);
         if patterns.excluded(candidate, meta.is_dir()) {
             let mut excluded = skipped(input, "excluded by pattern");

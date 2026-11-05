@@ -83,6 +83,10 @@ keelhaul backup ~/Documents
 The system `ssh` supplies authentication, host-key checking and alias resolution.
 Connect with `ssh backup-nas` first to verify your SSH setup.
 
+A backup root that is itself a symlink stores only the link and prints a warning.
+Add a trailing `/` to follow that root and back up its target directory instead.
+Symlinks within a backed-up directory are always stored as links.
+
 S3 requests default to 20 seconds per attempt (`KEELHAUL_S3_TIMEOUT_SECS`),
 with an overall 120-second operation deadline across retries and backoff
 (`KEELHAUL_S3_DEADLINE_SECS`). Both accept integer seconds from 1 to 3600.
