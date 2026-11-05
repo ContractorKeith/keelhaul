@@ -132,13 +132,7 @@ fn restore_with_hook<B: Backend>(
             }
         }
     }
-    let mut preflight = destination.preflight(
-        &items
-            .iter()
-            .filter(|item| !identical.contains(&item.path))
-            .cloned()
-            .collect::<Vec<_>>(),
-    )?;
+    let mut preflight = destination.preflight(&items, &identical)?;
     destination.cleanup_temps(&items)?;
     let mut hardlinks = files::Hardlinks::new();
     let mut blocked = std::collections::HashSet::new();

@@ -43,7 +43,7 @@ fn target_swap_after_open_never_redirects_writes() {
     let destination = Destination::new(&target).unwrap();
     std::fs::rename(&target, &pinned).unwrap();
     std::os::unix::fs::symlink(&outside, &target).unwrap();
-    destination.preflight(&[]).unwrap();
+    destination.preflight(&[], &Default::default()).unwrap();
     let mut temp = destination.temporary(Path::new("file")).unwrap();
     use std::io::Write;
     temp.file.write_all(b"pinned").unwrap();

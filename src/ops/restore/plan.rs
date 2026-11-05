@@ -14,7 +14,6 @@ use std::{
     os::unix::ffi::OsStringExt,
     path::{Component, PathBuf},
 };
-#[derive(Clone)]
 pub(super) struct Item {
     pub path: PathBuf,
     pub entry: Entry,

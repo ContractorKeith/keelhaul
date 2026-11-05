@@ -40,4 +40,16 @@ fn resume_skips_only_identical_regular_files_and_cleans_stale_temps() {
     let report = restore_with_options(&repo, "latest", &target, &[], &options).unwrap();
     assert_eq!(report.failed.len(), 2, "{report:?}");
     assert_eq!(std::fs::read(out.join("a")).unwrap(), b"changed!");
+    // A single-file include still preserves ancestor mtimes while cleaning temps.
+    std::fs::write(&stale, b"stale").unwrap();
+    let stamp = filetime::FileTime::from_unix_time(1234567890, 123456789);
+    filetime::set_file_mtime(&out, stamp).unwrap();
+    let report =
+        restore_with_options(&repo, "latest", &target, &[source.join("empty")], &options).unwrap();
+    assert!(report.failed.is_empty(), "{report:?}");
+    assert!(!stale.exists());
+    assert_eq!(
+        filetime::FileTime::from_last_modification_time(&std::fs::metadata(&out).unwrap()),
+        stamp
+    );
 }

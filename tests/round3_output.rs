@@ -80,14 +80,13 @@ fn backup_summary_includes_unsupported_types_in_the_total() {
     let source = dir.path().join("source");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("file"), b"data").unwrap();
-    rustix::fs::mknodat(
-        rustix::fs::CWD,
-        source.join("fifo"),
-        rustix::fs::FileType::Fifo,
-        rustix::fs::Mode::RUSR,
-        0,
-    )
-    .unwrap();
+    assert!(
+        Command::new("mkfifo")
+            .arg(source.join("fifo"))
+            .status()
+            .unwrap()
+            .success()
+    );
     let missing = dir.path().join("missing");
     let out = run(
         dir.path(),

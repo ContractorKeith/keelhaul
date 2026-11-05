@@ -70,7 +70,11 @@ impl Drop for Preflight<'_> {
     }
 }
 impl Destination {
-    pub fn preflight(&self, items: &[super::super::plan::Item]) -> Result<Preflight<'_>, Error> {
+    pub fn preflight(
+        &self,
+        items: &[super::super::plan::Item],
+        skipped: &HashSet<PathBuf>,
+    ) -> Result<Preflight<'_>, Error> {
         let mut result = Preflight {
             destination: self,
             reused: HashSet::new(),
@@ -101,6 +105,7 @@ impl Destination {
                                 .into();
                             result.remember(prefix.clone(), &current)?;
                         }
+                        Ok(_) if !directory && skipped.contains(&item.path) => break,
                         Ok(_) => {
                             return Err(Error::Refused("restore conflict".into()));
                         }
