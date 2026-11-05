@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 // One command-wide context also covers warnings from backend/backup workers.
 static QUIET: AtomicBool = AtomicBool::new(false);
 static JSON: AtomicBool = AtomicBool::new(false);
+static WARNED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 pub fn configure(quiet: bool, json: bool) {
+    WARNED.lock().unwrap_or_else(|e| e.into_inner()).clear();
     QUIET.store(quiet, Ordering::Relaxed);
     JSON.store(json, Ordering::Relaxed);
 }
@@ -18,7 +21,15 @@ pub fn warning(args: std::fmt::Arguments<'_>) {
     }
 }
 pub fn damage(value: &impl std::fmt::Display) {
-    eprintln!("{value}");
+    let text = value.to_string();
+    let text = text.strip_prefix("damage: ").unwrap_or(&text);
+    if WARNED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(text.into())
+    {
+        eprintln!("{text}");
+    }
 }
 
 #[derive(Serialize)]
