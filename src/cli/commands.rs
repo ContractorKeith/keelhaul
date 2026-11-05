@@ -151,7 +151,18 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         summary.indexes_removed,
                         if dry_run { " (dry run)" } else { "" }
                     );
-                    (serde_json::to_value(summary)?, text)
+                    if cli.json {
+                        println!("{}", serde_json::to_string(&summary)?);
+                    } else {
+                        println!("{text}");
+                        for damage in &summary.damage {
+                            eprintln!("{damage}");
+                        }
+                    }
+                    if !summary.damage.is_empty() {
+                        super::backup::completed_damage()?;
+                    }
+                    return Ok(());
                 }
                 Command::Unlock => {
                     let repo = Repository::open(backend, &secret)?;

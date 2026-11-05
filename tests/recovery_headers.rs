@@ -37,3 +37,52 @@ fn indexed_blobs_survive_header_and_trailer_corruption() {
         assert_eq!(listed.damage[0].problem, "bad-header");
     }
 }
+
+#[test]
+fn rebuild_indexes_readable_packs_and_preserves_cached_damaged_headers() {
+    for foreign in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = std::fs::canonicalize(dir.path()).unwrap().join("file");
+        std::fs::write(&source, b"recover every byte").unwrap();
+        let secret = Secret::KeyFile([7; 32]);
+        let repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
+        let snap = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+        let name = if foreign {
+            let other = Repository::init(MemoryBackend::new(), &secret).unwrap();
+            backup(&other, std::slice::from_ref(&source), vec![]).unwrap();
+            let name = other.backend.list(Kind::Data).unwrap()[0].name.clone();
+            repo.backend
+                .plant_raw(name.as_str(), &other.backend.read(&name).unwrap())
+                .unwrap();
+            name
+        } else {
+            let name = repo.backend.list(Kind::Data).unwrap()[0].name.clone();
+            let mut bytes = repo.backend.read(&name).unwrap();
+            *bytes.last_mut().unwrap() ^= 128;
+            repo.backend.plant_raw(name.as_str(), &bytes).unwrap();
+            name
+        };
+        for dry in [true, false] {
+            let report = keelhaul::ops::rebuild_index::rebuild(&repo, dry).unwrap();
+            assert_eq!(report.packs, 1);
+            assert_eq!(report.damage.len(), 1);
+            assert_eq!(report.damage[0].object, name.as_str());
+        }
+        let target = dir.path().join("out");
+        let report = restore(&repo, &snap.snapshot, &target, &[]).unwrap();
+        assert!(report.failed.is_empty());
+        assert_eq!(
+            std::fs::read(target.join(source.strip_prefix("/").unwrap())).unwrap(),
+            b"recover every byte"
+        );
+        if foreign {
+            assert!(
+                keelhaul::ops::check::check(&repo)
+                    .unwrap()
+                    .notes
+                    .iter()
+                    .any(|n| n.problem.contains("remove it by hand"))
+            );
+        }
+    }
+}

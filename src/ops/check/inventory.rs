@@ -205,7 +205,11 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
             state.report.note(
                 crate::repo::blobs::pack_name(id)?.as_str(),
                 "pack",
-                "orphan",
+                if state.packs.get(id).is_some_and(Option::is_none) {
+                    "orphan: not readable with this repository's keys; remove it by hand if it doesn't belong here"
+                } else {
+                    "orphan"
+                },
             );
         }
     }
