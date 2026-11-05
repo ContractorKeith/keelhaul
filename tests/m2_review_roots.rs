@@ -93,7 +93,9 @@ fn inaccessible_ancestor_is_skipped_while_good_roots_succeed_and_all_failed_writ
         ],
     );
     assert!(String::from_utf8_lossy(&output.stderr).contains("warning:"));
-    let report = json(output);
+    assert_eq!(output.status.code(), Some(5));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["incomplete"], true);
     assert_eq!(report["summary"]["files_skipped"], 1);
     assert_eq!(report["summary"]["files_new"], 1);
     assert_eq!(report["skipped"].as_array().unwrap().len(), 1);

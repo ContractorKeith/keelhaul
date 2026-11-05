@@ -194,6 +194,7 @@ against known source files. Damage reports name the affected objects.
 | 2 | Invalid usage |
 | 3 | Repository damage found |
 | 4 | Repository locked |
+| 5 | Snapshot written; entries skipped (incomplete backup) |
 
 ## Scheduling
 

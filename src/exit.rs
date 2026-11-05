@@ -5,6 +5,7 @@ pub enum Failure {
     Usage,
     Damage,
     Locked,
+    Incomplete,
 }
 
 pub const fn code(result: Result<(), Failure>) -> u8 {
@@ -14,6 +15,7 @@ pub const fn code(result: Result<(), Failure>) -> u8 {
         Err(Failure::Usage) => 2,
         Err(Failure::Damage) => 3,
         Err(Failure::Locked) => 4,
+        Err(Failure::Incomplete) => 5,
     }
 }
 
@@ -110,6 +112,7 @@ mod tests {
             (Failure::Usage, 2),
             (Failure::Damage, 3),
             (Failure::Locked, 4),
+            (Failure::Incomplete, 5),
         ] {
             assert_eq!(code(Err(failure)), expected);
         }

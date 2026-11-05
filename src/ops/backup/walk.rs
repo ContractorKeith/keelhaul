@@ -132,10 +132,7 @@ pub(super) fn run(
                     content: Vec::new(),
                 }
             } else {
-                send(
-                    &events,
-                    Event::Skip((root_index, key), path, "unsupported file type".into()),
-                )?;
+                send(&events, Event::Unsupported((root_index, key), path))?;
                 continue;
             };
             let mut entry = metadata::entry(&name, &meta, node)?;

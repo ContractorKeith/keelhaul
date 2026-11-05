@@ -32,6 +32,7 @@ pub(super) enum Event {
     Directory((usize, PathBuf), Box<Entry>, usize),
     Skip((usize, PathBuf), PathBuf, String),
     Ignored((usize, PathBuf)),
+    Unsupported((usize, PathBuf), PathBuf),
     Warning(PathBuf, String),
     Read,
     ChangedDuringRead(PathBuf),
@@ -171,6 +172,13 @@ pub(super) fn run<B: Backend>(
                 Event::Directory(key, entry, count) => {
                     summary.dirs += 1;
                     trees.directory(key, *entry, count, &mut store)?;
+                }
+                Event::Unsupported(key, path) => {
+                    summary.files_skipped += 1;
+                    let mut item = super::skipped(&path, "unsupported file type");
+                    item.required = false;
+                    skipped.push(item);
+                    trees.complete(key, None, &mut store)?;
                 }
                 Event::Ignored(key) => trees.complete(key, None, &mut store)?,
                 Event::Warning(path, reason) => {

@@ -25,11 +25,14 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize)]
 pub struct Skipped {
+    #[serde(skip)]
+    pub(crate) required: bool,
     pub path: String,
     pub reason: String,
 }
 #[derive(Debug, Serialize)]
 pub struct Report {
+    pub incomplete: bool,
     pub snapshot: String,
     pub summary: ReportSummary,
     pub skipped: Vec<Skipped>,
@@ -74,6 +77,7 @@ fn skipped(path: &Path, reason: impl ToString) -> Skipped {
     let reason = reason.to_string();
     eprintln!("warning: {}: {reason}", path.display());
     Skipped {
+        required: true,
         path: path.to_string_lossy().into_owned(),
         reason,
     }
@@ -148,7 +152,9 @@ fn backup_locked<B: Backend>(
         };
         let candidate = normalized.file_name().map(Path::new).unwrap_or(&normalized);
         if patterns.excluded(candidate, meta.is_dir()) {
-            failures.push(skipped(input, "excluded by pattern"));
+            let mut excluded = skipped(input, "excluded by pattern");
+            excluded.required = false;
+            failures.push(excluded);
             continue;
         }
         roots.push((normalized, input));
@@ -217,6 +223,7 @@ fn backup_locked<B: Backend>(
     )?;
     publication::check(repo, &id, &result.blobs)?;
     Ok(Report {
+        incomplete: failures.iter().any(|entry| entry.required),
         snapshot: id,
         summary: ReportSummary {
             totals: summary,

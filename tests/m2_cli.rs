@@ -46,7 +46,7 @@ fn json_contract_filters_ls_include_conflict_and_damage_exit() {
             .keys()
             .cloned()
             .collect::<Vec<_>>(),
-        ["skipped", "snapshot", "summary"]
+        ["incomplete", "skipped", "snapshot", "summary"]
     );
     assert_eq!(report["summary"]["data_blobs_added"], 1);
     assert_eq!(report["skipped"], serde_json::json!([]));
@@ -192,7 +192,7 @@ fn missing_source_does_not_back_up_a_live_file_at_its_lexical_fallback() {
             .unwrap()
             .is_empty()
     );
-    let mixed = json(cli(
+    let mixed_output = cli(
         root,
         &[
             "backup",
@@ -200,7 +200,10 @@ fn missing_source_does_not_back_up_a_live_file_at_its_lexical_fallback() {
             root.join("victim").to_str().unwrap(),
             "--json",
         ],
-    ));
+    );
+    assert_eq!(mixed_output.status.code(), Some(5));
+    let mixed: serde_json::Value = serde_json::from_slice(&mixed_output.stdout).unwrap();
+    assert_eq!(mixed["incomplete"], true);
     assert_eq!(mixed["summary"]["files_new"], 1);
     assert_eq!(mixed["summary"]["files_skipped"], 1);
 }
