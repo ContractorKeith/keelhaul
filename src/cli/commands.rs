@@ -56,6 +56,13 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         for note in &report.notes {
                             println!("{}: {}", note.object.escape_debug(), note.problem);
                         }
+                        if report.damage.is_empty() {
+                            println!(
+                                "no damage: {} packs, {} snapshots checked",
+                                backend.list(crate::backend::Kind::Data)?.len(),
+                                backend.list(crate::backend::Kind::Snapshots)?.len()
+                            );
+                        }
                     }
                     if !report.damage.is_empty() {
                         super::backup::completed_damage()?;
@@ -104,11 +111,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         &repo.subkeys(),
                         &crate::repo::lock::SystemClock,
                     )?;
-                    let text = removed
-                        .iter()
-                        .map(|id| format!("removed {id}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    let text = format!("removed {} locks", removed.len());
                     (serde_json::json!({"removed": removed}), text)
                 }
                 Command::Key { command } => {
