@@ -75,7 +75,7 @@ impl<B: Backend> Repository<B> {
             BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
             other => Error::Backend(other),
         })?;
-        let master = Self::unlock(&backend, secret)?;
+        let (master, opened_slot) = Self::unlock_with_slot(&backend, secret)?;
         let payload =
             envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {
                 let problem = if matches!(e, envelope::Error::Undecryptable) {
@@ -83,7 +83,11 @@ impl<B: Backend> Repository<B> {
                 } else {
                     "bad-format"
                 };
-                damage("config", problem, &e.to_string())
+                if let Some(slot) = &opened_slot {
+                    damage(slot, problem, &format!("key slot {slot} opened with this secret belongs to another repository; config authentication failed"))
+                } else {
+                    damage("config", problem, &e.to_string())
+                }
             })?;
         let config = Config::parse(&payload).map_err(|e| damage("config", "bad-format", &e))?;
         Ok(Self {
@@ -95,6 +99,12 @@ impl<B: Backend> Repository<B> {
 
     /// Unlock independently of config so audits can collect config damage too.
     pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
+        Self::unlock_with_slot(backend, secret).map(|(master, _)| master)
+    }
+    fn unlock_with_slot(
+        backend: &B,
+        secret: &Secret,
+    ) -> Result<(MasterKey, Option<String>), Error> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let mut unreadable = Vec::new();
@@ -122,12 +132,12 @@ impl<B: Backend> Repository<B> {
                             "key slot check differs",
                         ));
                     }
-                    return Ok(key);
+                    return Ok((key, None));
                 }
                 // Preserve an unwrapped key for audits of a damaged config. Open
                 // still authenticates and parses config before accepting this key.
                 if master.is_none() {
-                    master = Some(key);
+                    master = Some((key, Some(entry.name.to_string())));
                 }
             }
         }
