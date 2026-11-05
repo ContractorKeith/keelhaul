@@ -1,7 +1,8 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
+pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+    super::secrets::resolve(&mut cli);
     match cli.command {
         Command::Version => output::version(output::stdout(), cli.json)?,
         command => {
