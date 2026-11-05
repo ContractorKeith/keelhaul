@@ -306,7 +306,9 @@ A snapshot object is an envelope (label `keelhaul/snapshot`) whose payload is:
 }
 ```
 
-`paths` are absolute, cleaned and sorted. Root entries use `name` (UTF-8), never
+`paths` are absolute, cleaned and sorted. `paths` never contain one path inside
+another; readers treat a snapshot that violates this as damage of that snapshot's affected
+root only. Root entries use `name` (UTF-8), never
 `name_b64`; a non-UTF-8 backup root is refused at backup time. The root tree has one
 entry per backed-up path, named by the path with every `%` replaced by `%25` first, then every `/` replaced by
 `%2F` (so `/a%2Fb` becomes `%2Fa%252Fb`). Restore reverses that encoding (`%2F` → `/`, then

@@ -155,6 +155,22 @@ fn backup_locked<B: Backend>(
     }
     roots.sort_by(|a, b| a.0.cmp(&b.0));
     roots.dedup_by(|a, b| a.0 == b.0);
+    let mut covering: Vec<(PathBuf, &PathBuf)> = Vec::new();
+    for root in roots {
+        if let Some((parent, _)) = covering
+            .iter()
+            .find(|(parent, _)| root.0.starts_with(parent))
+        {
+            eprintln!(
+                "warning: {} is inside {}; backing it up once",
+                root.0.display(),
+                parent.display()
+            );
+        } else {
+            covering.push(root);
+        }
+    }
+    let roots = covering;
     if roots.is_empty() {
         return Err(Error::Refused(
             "no backup roots could be read; no snapshot written".into(),

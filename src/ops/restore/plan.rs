@@ -3,13 +3,13 @@ use crate::ops::listing::damage;
 use crate::{
     backend::Backend,
     format::{
-        snapshot::{Snapshot, decode_root},
+        snapshot::Snapshot,
         tree::{Entry, Node},
     },
     repo::{Error, blobs::BlobStore, trees::TreeCache},
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     ffi::OsString,
     os::unix::ffi::OsStringExt,
     path::{Component, PathBuf},
@@ -21,6 +21,7 @@ pub(super) struct Item {
 }
 struct Planner<'a> {
     snapshot: &'a Snapshot,
+    blocked: Vec<PathBuf>,
     includes: Vec<PathBuf>,
     matched: HashSet<PathBuf>,
     active: HashSet<String>,
@@ -80,6 +81,30 @@ impl Planner<'_> {
                     for problem in problems {
                         self.report.damage(damage(&id, &problem))?;
                     }
+                    let mut tree = (*tree).clone();
+                    if root {
+                        let shape = crate::format::snapshot_shape::validate(self.snapshot, &tree);
+                        if !shape.problems.is_empty() {
+                            self.report.damaged.push(crate::damage::Damage::new(
+                                &id,
+                                "tree",
+                                "bad-format",
+                                &shape.problems.join("; "),
+                            ));
+                        }
+                        self.blocked = shape.blocked;
+                        tree.entries = tree
+                            .entries
+                            .into_iter()
+                            .zip(shape.roots)
+                            .filter_map(|(mut entry, path)| {
+                                path.map(|path| {
+                                    entry.name = Some(path);
+                                    entry
+                                })
+                            })
+                            .collect();
+                    }
                     if let Some(item) = owner {
                         self.items.push(item);
                     }
@@ -104,22 +129,7 @@ impl Planner<'_> {
                         let decoded = entry
                             .name
                             .as_deref()
-                            .ok_or_else(|| damage(&object, "root name is not UTF-8"))
-                            .and_then(|name| {
-                                decode_root(name).map_err(|e| damage(&object, &e.to_string()))
-                            });
-                        let decoded = match decoded {
-                            Ok(p) => p,
-                            Err(e) => {
-                                self.report.damage(e)?;
-                                continue;
-                            }
-                        };
-                        if !self.snapshot.paths.contains(&decoded) {
-                            self.report
-                                .damage(damage(&object, "root entry absent from snapshot paths"))?;
-                            continue;
-                        }
+                            .expect("shared validator supplies decoded root names");
                         PathBuf::from(decoded.trim_start_matches('/'))
                     } else {
                         base.join(OsString::from_vec(
@@ -128,6 +138,9 @@ impl Planner<'_> {
                                 .map_err(|e| damage(&object, &e.to_string()))?,
                         ))
                     };
+                    if self.blocked.iter().any(|blocked| path.starts_with(blocked)) {
+                        continue;
+                    }
                     if self.includes.contains(&path) {
                         self.matched.insert(path.clone());
                     }
@@ -187,6 +200,7 @@ pub(super) fn build<B: Backend>(
     }
     let mut planner = Planner {
         snapshot,
+        blocked: Vec::new(),
         includes: normalized,
         matched: HashSet::new(),
         active: HashSet::new(),
@@ -203,41 +217,7 @@ pub(super) fn build<B: Backend>(
             )));
         }
     }
-    // Overlapping backup roots can describe the same destination; require agreement.
-    let mut unique: HashMap<PathBuf, usize> = HashMap::new();
-    let mut items: Vec<Item> = Vec::new();
-    for item in planner.items {
-        if let Some(&i) = unique.get(&item.path) {
-            let mut a = serde_json::to_value(&items[i].entry)?;
-            let mut b = serde_json::to_value(&item.entry)?;
-            for value in [&mut a, &mut b] {
-                if let Some(m) = value.as_object_mut() {
-                    m.remove("name");
-                    m.remove("name_b64");
-                }
-            }
-            if a != b {
-                return Err(damage(&item.object, "overlapping roots disagree"));
-            }
-        } else {
-            unique.insert(item.path.clone(), items.len());
-            items.push(item);
-        }
-    }
+    let mut items = planner.items;
     items.sort_by(|a, b| a.path.cmp(&b.path));
-    let directories = items
-        .iter()
-        .map(|i| (&i.path, matches!(i.entry.node, Node::Dir { .. })))
-        .collect::<HashMap<_, _>>();
-    for item in &items {
-        for ancestor in item.path.ancestors().skip(1) {
-            if directories.get(&ancestor.to_path_buf()) == Some(&false) {
-                return Err(damage(
-                    &item.object,
-                    "non-directory ancestor in restore plan",
-                ));
-            }
-        }
-    }
     Ok(items)
 }

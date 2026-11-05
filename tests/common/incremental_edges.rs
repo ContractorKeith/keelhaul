@@ -17,7 +17,7 @@ fn report_counter_does_not_change_snapshot_format() {
 }
 
 #[test]
-fn overlapping_roots_keep_independent_root_names() {
+fn overlapping_roots_keep_only_covering_root() {
     let scratch = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(scratch.path()).unwrap().join("source");
     fs::create_dir_all(root.join("nested")).unwrap();
@@ -32,7 +32,7 @@ fn overlapping_roots_keep_independent_root_names() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(tree.entries.len(), 2);
+    assert_eq!(tree.entries.len(), 1);
     assert_eq!(
         tree.entries[0].name.as_deref(),
         Some(keelhaul::format::snapshot::root_name(root.to_str().unwrap()).as_str())
