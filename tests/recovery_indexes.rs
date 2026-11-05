@@ -57,3 +57,30 @@ fn damaged_deleted_and_foreign_indexes_recover_and_rebuild() {
         assert!(check(&repo).unwrap().damage.is_empty());
     }
 }
+
+#[test]
+fn swapped_pack_bytes_are_named_by_structural_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(dir.path()).unwrap().join("file");
+    let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
+    for bytes in [b"first", b"other"] {
+        std::fs::write(&source, bytes).unwrap();
+        backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+    }
+    let packs = repo.backend.list(Kind::Data).unwrap();
+    assert_eq!(packs.len(), 2);
+    let a = repo.backend.read(&packs[0].name).unwrap();
+    let b = repo.backend.read(&packs[1].name).unwrap();
+    repo.backend.plant_raw(packs[0].name.as_str(), &b).unwrap();
+    repo.backend.plant_raw(packs[1].name.as_str(), &a).unwrap();
+    let report = check(&repo).unwrap();
+    for entry in packs {
+        assert!(
+            report
+                .damage
+                .iter()
+                .any(|d| d.object == entry.name.as_str() && d.problem == "hash-mismatch"),
+            "{report:?}"
+        );
+    }
+}
