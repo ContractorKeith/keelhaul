@@ -2,6 +2,8 @@
 
 ## Unreleased fixes
 
+- Stop queued backup uploads when the repository lock disappears or refresh fails.
+
 - Add `backup --heal` to verify indexed chunks and replace damaged copies before prune.
 
 - Abort backups on descriptor or memory exhaustion, with a jobs/ulimit hint.

@@ -174,7 +174,9 @@ fn backup_locked<B: Backend>(
     let host = options.host.clone().unwrap_or_else(crate::host::hostname);
     let mut store = BlobStore::load(repo)?;
     let (parent, previous) = parent::load(repo, &mut store, &host, &strings, options)?;
-    let result = pipeline::run(repo, store, &roots, &strings, previous, &patterns, options)?;
+    let result = pipeline::run(
+        repo, store, &roots, &strings, previous, &patterns, options, lock,
+    )?;
     let mut summary = result.summary;
     summary.files_skipped += failures.len() as u64;
     failures.extend(result.skipped);

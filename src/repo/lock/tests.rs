@@ -53,3 +53,15 @@ fn acquisition_list_error_removes_own_lock() {
     assert!(Guard::acquire(&backend, keys, false, &SystemClock).is_err());
     assert!(backend.list(Kind::Locks).unwrap().is_empty());
 }
+
+#[test]
+fn failed_refresh_remains_fatal_even_if_lock_reappears() {
+    let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([43; 32])).unwrap();
+    let guard = Guard::acquire(&repo.backend, repo.subkeys(), false, &SystemClock).unwrap();
+    let entry = repo.backend.list(Kind::Locks).unwrap().pop().unwrap();
+    let bytes = repo.backend.read(&entry.name).unwrap();
+    repo.backend.delete(&entry.name).unwrap();
+    assert!(guard.refresh().is_err());
+    repo.backend.write(&entry.name, &bytes).unwrap();
+    assert!(matches!(guard.self_check(), Err(Error::Locked(_))));
+}

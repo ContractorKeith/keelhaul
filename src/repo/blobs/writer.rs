@@ -13,7 +13,7 @@ pub struct Upload {
 }
 pub(super) struct Uploads {
     sender: SyncSender<Upload>,
-    completed: Receiver<Result<(), crate::backend::BackendError>>,
+    completed: Receiver<Result<(), Error>>,
     outstanding: usize,
 }
 impl Uploads {
@@ -61,7 +61,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
     pub fn upload_pool(
         &mut self,
         sender: SyncSender<Upload>,
-        completed: Receiver<Result<(), crate::backend::BackendError>>,
+        completed: Receiver<Result<(), Error>>,
     ) {
         self.uploads = Some(Uploads {
             sender,

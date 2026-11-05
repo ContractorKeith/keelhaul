@@ -53,6 +53,10 @@ pub(super) struct Output {
     pub files_read: u64,
     pub files_changed_during_read: u64,
 }
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pipeline coordinates repository, fencing, source walk and worker options"
+)]
 pub(super) fn run<B: Backend>(
     repo: &Repository<B>,
     mut store: BlobStore<'_, B>,
@@ -61,6 +65,7 @@ pub(super) fn run<B: Backend>(
     previous: Previous,
     patterns: &Patterns,
     options: &Options,
+    lock: &crate::repo::lock::Guard<'_, B>,
 ) -> Result<Output, Error> {
     let jobs = options.jobs;
     let seen = Mutex::new(
@@ -90,7 +95,10 @@ pub(super) fn run<B: Backend>(
             thread::Builder::new().spawn_scoped(scope, move || {
                 workers::run("upload", errors, move || {
                     while let Some(task) = workers::receive(&receiver, "upload")? {
-                        if done.send(workers::upload(repo, &task)).is_err() {
+                        let result = lock
+                            .self_check()
+                            .and_then(|()| workers::upload(repo, &task).map_err(Error::from));
+                        if done.send(result).is_err() {
                             break;
                         }
                     }
