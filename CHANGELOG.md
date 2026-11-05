@@ -11,8 +11,13 @@
   corruption tests that exercise failed restores.
 - M4: incremental backups, include/exclude filters, bounded parallel processing,
   index flushing and backup crash recovery tests.
-- M5: shared/exclusive locks, stale-lock cleanup, retention policies and pruning
-  with repacking and crash recovery tests.
+- M5: shared/exclusive locks with refresh and self-checks, exit 4 on lock conflicts,
+  and stale/dead-process cleanup through `unlock`.
+- M5: grouped retention policies, explicit snapshot removal, `forget --dry-run`
+  and combined `forget --prune`; configurable repacking with `prune --max-unused`.
+- M5: replacement index payloads split at 16 MiB, with only the final index
+  superseding old indexes; lock and snapshot checks before and during deletion,
+  replacement-index withdrawal on pre-delete abort, and prune crash recovery tests.
 - M6: S3-compatible storage with environment credentials and Docker end-to-end tests.
 - M7: SFTP over system SSH, ssh_config aliases and Docker end-to-end tests.
 - M8: four-platform release archives, SHA256SUMS, Homebrew formula preparation,

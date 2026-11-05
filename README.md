@@ -130,8 +130,35 @@ Filters include `--exclude`, `--exclude-file` and `--one-file-system`.
 
 ## Retention
 
-Retention examples will be filled in when milestone M5 merges. See
-[the CLI contract](docs/PLAN.md#6-cli-contract) for planned forget/prune flags.
+`forget` removes snapshot records; `prune` reclaims their unreferenced data.
+Policies apply separately to each host and set of source paths by default.
+Combine `--keep-last`, `--keep-hourly`, `--keep-daily`, `--keep-weekly`,
+`--keep-monthly`, `--keep-yearly` and `--keep-tag`: a snapshot matching any rule
+is kept. Calendar rules keep the newest snapshot in each of the last N occupied
+buckets, using local time (UTC with a warning if unavailable).
+
+Preview a policy, then apply it and reclaim space in one operation:
+
+```sh
+keelhaul forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --dry-run
+keelhaul forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
+```
+
+You can instead forget explicit snapshot IDs, without policy flags, and prune
+later. `prune --max-unused PCT` repacks packs whose unused blob bytes exceed the
+percentage (default 20); entirely unused packs are reclaimed subject to the
+in-flight backup grace period. Preview pruning before changing storage:
+
+```sh
+keelhaul prune --max-unused 20 --dry-run
+keelhaul prune --max-unused 20
+```
+
+Conflicting locks or loss of an operation's lock cause exit 4. Run
+`keelhaul unlock` only when the process holding the lock is gone; a stale lock
+may belong to a sleeping laptop. Check the owning machine first. `unlock`
+removes locks that are stale or belong to a dead process on this host; age alone
+does not establish that it is safe to interrupt another machine's backup.
 
 ## How to verify a backup
 
