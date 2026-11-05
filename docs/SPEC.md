@@ -99,7 +99,8 @@ salt, and finally the decoded `wrapped` bytes. A reader that opened the reposito
 another slot MUST recompute `check` for every slot and report a mismatch as damage of that
 slot. A reader unlocking through a slot verifies its `check` after unwrapping.
 
-Removing the last slot is refused. A repository never stores the master key unwrapped.
+Removing a slot is refused unless another slot has a valid `check` under this
+repository’s master key. A repository never stores the master key unwrapped.
 
 ## 4. Envelope
 

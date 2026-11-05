@@ -9,6 +9,13 @@
 - Bound S3 attempts to 20 seconds and operations across retries to 120 seconds by default.
 - Warn when a backup root is a symlink; follow it with an explicit trailing slash.
 - Exercise runtime descriptor exhaustion with a feature-gated file-open fault hook.
+- Recover damaged or missing index coverage from pack headers; add `rebuild-index`
+  with dry-run support and retain damage reports while restoring intact files.
+- Refuse removing the last slot whose check authenticates under this repository's key.
+- Report damaged `latest` candidates and identify swapped packs during structural checks.
+- Honor secret flag precedence, clarify restore errors and combined prune summaries,
+  and use a final macOS drive-cache flush instead of per-file full flushes.
+- Correct Docker e2e targets and service startup instructions.
 
 - Stop queued backup uploads when the repository lock disappears or refresh fails.
 
