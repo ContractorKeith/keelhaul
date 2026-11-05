@@ -42,9 +42,10 @@ fn existing_directory_and_disjoint_sibling_are_reused_without_metadata_changes()
     fs::write(&path, b"user file").unwrap();
     assert!(
         restore(&repo, "latest", &other, &[])
-            .unwrap_err()
-            .to_string()
-            .contains("conflict")
+            .unwrap()
+            .failed
+            .iter()
+            .any(|failure| failure.error.contains("conflict"))
     );
     assert_eq!(fs::read(path).unwrap(), b"user file");
 }

@@ -69,8 +69,11 @@ impl Planner<'_> {
                     let parsed = self.cache.salvage(store, &id);
                     let (tree, problems) = match parsed {
                         Ok(t) => t,
-                        Err(e) => {
-                            self.report.damage(e)?;
+                        Err(error) => {
+                            match crate::damage::Damage::from_error(error) {
+                                Ok(damage) => self.report.damaged.push(damage),
+                                Err(error) => self.report.failure(&base, error),
+                            }
                             continue;
                         }
                     };

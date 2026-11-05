@@ -111,9 +111,10 @@ pub fn run<B: Backend>(backend: B) {
     let before = fs::read(restored.join("small")).unwrap();
     assert!(
         restore(&repo, "latest", &target, &[])
-            .unwrap_err()
-            .to_string()
-            .contains("conflict")
+            .unwrap()
+            .failed
+            .iter()
+            .any(|failure| failure.error.contains("conflict"))
     );
     assert_eq!(fs::read(restored.join("small")).unwrap(), before);
     let single = root.as_path().join("single");

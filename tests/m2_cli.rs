@@ -76,7 +76,10 @@ fn json_contract_filters_ls_include_conflict_and_damage_exit() {
             "--json",
         ],
     ));
-    assert_eq!(output, serde_json::json!({"restored":2,"damage":[]}));
+    assert_eq!(
+        output,
+        serde_json::json!({"restored":2,"damage":[],"failed":[]})
+    );
     let recorded = snapshots[0]["paths"][0].as_str().unwrap();
     assert_eq!(
         std::fs::read(target.join(recorded.trim_start_matches('/')).join("file")).unwrap(),

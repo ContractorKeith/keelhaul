@@ -51,7 +51,12 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     if cli.json {
                         println!("{}", serde_json::to_string(&report)?);
                     } else {
-                        report.text();
+                        for damage in &report.damage {
+                            println!("{damage}");
+                        }
+                        for note in &report.notes {
+                            println!("{}: {}", note.object.escape_debug(), note.problem);
+                        }
                     }
                     if !report.damage.is_empty() {
                         super::backup::completed_damage()?;
@@ -154,7 +159,24 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         }
                         Err(error) => return Err(error.into()),
                     };
-                    super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
+                    if let Command::Restore {
+                        snap,
+                        target,
+                        include,
+                        host,
+                    } = command
+                    {
+                        super::audit::restore(
+                            &repo,
+                            &snap,
+                            &target,
+                            &include,
+                            host.as_deref(),
+                            cli.json,
+                        )?;
+                    } else {
+                        super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
+                    }
                     return Ok(());
                 }
                 Command::Version => unreachable!("version handled above"),
