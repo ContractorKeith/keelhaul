@@ -29,6 +29,7 @@ cargo build --release                   # target/release/keelhaul
 ## Pointers
 
 - `docs/SPEC.md` — the repository format, byte level. The contract; change it first, in its own PR.
+- `docs/RELEASING.md` — tag, release workflow, Homebrew and crates.io steps.
 - `docs/PLAN.md` — feature matrix, architecture rules, dependencies, CLI contract, milestones, testing, acceptance.
 - `CONTEXT.md` — glossary. Use its words in code, issues and PRs.
 - `docs/adr/` — keyed chunk IDs and gear; sync core and system ssh.
