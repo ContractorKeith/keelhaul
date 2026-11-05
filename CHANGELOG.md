@@ -2,6 +2,8 @@
 
 ## Unreleased fixes
 
+- Preserve files that change during reads and report their count in backup JSON.
+
 - Bound local directory lock waits and write/fsync temporary objects before locking.
 
 ## 0.1.0 — unreleased

@@ -4,6 +4,9 @@ mod parent;
 mod pipeline;
 mod publication;
 #[cfg(test)]
+#[path = "backup/read_tests.rs"]
+mod read_tests;
+#[cfg(test)]
 mod tests;
 mod trees;
 mod walk;
@@ -34,6 +37,7 @@ pub struct ReportSummary {
     #[serde(flatten)]
     pub totals: Summary,
     pub files_read: u64,
+    pub files_changed_during_read: u64,
 }
 impl std::ops::Deref for ReportSummary {
     type Target = Summary;
@@ -191,6 +195,7 @@ fn backup_locked<B: Backend>(
         summary: ReportSummary {
             totals: summary,
             files_read: result.files_read,
+            files_changed_during_read: result.files_changed_during_read,
         },
         skipped: failures,
     })

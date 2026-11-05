@@ -38,11 +38,15 @@ pub(super) fn read(
         .open(&path)
     {
         Ok(f) => f,
-        Err(e) => return send(events, Event::Skip(key, path, e.to_string())),
+        Err(e) => {
+            return send(events, Event::Skip(key, path, e.to_string()));
+        }
     };
     let opened = match file.metadata() {
         Ok(m) => m,
-        Err(e) => return send(events, Event::Skip(key, path, e.to_string())),
+        Err(e) => {
+            return send(events, Event::Skip(key, path, e.to_string()));
+        }
     };
     if opened.ino() != entry.inode || opened.dev() != entry.device || !opened.is_file() {
         return send(
@@ -51,6 +55,11 @@ pub(super) fn read(
         );
     }
     send(events, Event::Read)?;
+    // Pin metadata to the descriptor, rather than the earlier walk observation.
+    let name = entry
+        .name_bytes()
+        .map_err(|e| Error::Refused(e.to_string()))?;
+    entry = metadata::entry(&name, &opened, entry.node)?;
     let mut reader = Chunker::new(&file, gear);
     let mut content = Vec::new();
     let mut size = 0;
@@ -58,7 +67,9 @@ pub(super) fn read(
         let bytes = match reader.next_chunk() {
             Ok(Some(bytes)) => bytes,
             Ok(None) => break,
-            Err(e) => return send(events, Event::Skip(key, path, e.to_string())),
+            Err(e) => {
+                return send(events, Event::Skip(key, path, e.to_string()));
+            }
         };
         size += bytes.len() as u64;
         let id = blake3::keyed_hash(&keys.0, bytes).to_hex().to_string();
@@ -82,17 +93,16 @@ pub(super) fn read(
     }
     let after = match file.metadata() {
         Ok(m) => m,
-        Err(e) => return send(events, Event::Skip(key, path, e.to_string())),
+        Err(e) => {
+            return send(events, Event::Skip(key, path, e.to_string()));
+        }
     };
-    if !matches!(entry.node, Node::File { size: expected, .. } if expected == size)
+    if opened.len() != size
         || after.len() != size
         || metadata::timestamp(after.mtime(), after.mtime_nsec())? != entry.mtime
         || metadata::timestamp(after.ctime(), after.ctime_nsec())? != entry.ctime
     {
-        return send(
-            events,
-            Event::Skip(key, path, "changed while reading".into()),
-        );
+        send(events, Event::ChangedDuringRead(path))?;
     }
     let unchanged = previous_content.as_ref() == Some(&content);
     entry.node = Node::File { size, content };

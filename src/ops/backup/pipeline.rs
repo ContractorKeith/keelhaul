@@ -34,6 +34,7 @@ pub(super) enum Event {
     Ignored((usize, PathBuf)),
     Warning(PathBuf, String),
     Read,
+    ChangedDuringRead(PathBuf),
     Finished(bool),
 }
 pub(super) fn closed() -> Error {
@@ -49,6 +50,7 @@ pub(super) struct Output {
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
     pub files_read: u64,
+    pub files_changed_during_read: u64,
 }
 pub(super) fn run<B: Backend>(
     repo: &Repository<B>,
@@ -129,6 +131,7 @@ pub(super) fn run<B: Backend>(
         let mut summary = Summary::default();
         let mut skipped = Vec::new();
         let mut files_read = 0;
+        let mut files_changed_during_read = 0;
         let mut trees = Trees::new(roots);
         let mut unfinished = jobs + 1;
         while unfinished > 0 {
@@ -139,6 +142,13 @@ pub(super) fn run<B: Backend>(
                 }
                 Event::Blob(blob) => store.add_sealed(blob)?,
                 Event::Read => files_read += 1,
+                Event::ChangedDuringRead(path) => {
+                    files_changed_during_read += 1;
+                    eprintln!(
+                        "warning: {}: changed while reading; stored as read",
+                        path.display()
+                    );
+                }
                 Event::Directory(key, entry, count) => {
                     summary.dirs += 1;
                     trees.directory(key, *entry, count, &mut store)?;
@@ -187,6 +197,7 @@ pub(super) fn run<B: Backend>(
             summary,
             skipped,
             files_read,
+            files_changed_during_read,
         })
     })
 }
