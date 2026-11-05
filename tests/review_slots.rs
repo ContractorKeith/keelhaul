@@ -56,3 +56,24 @@ fn unlock_rejects_a_bad_check_after_successful_unwrapping() {
         })
     ));
 }
+
+#[test]
+fn foreign_same_secret_slot_does_not_hide_the_real_repository() {
+    let secret = Secret::Password("same password".into());
+    let repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
+    let other = Repository::init(MemoryBackend::new(), &secret).unwrap();
+    let foreign = format!("keys/{}", "0".repeat(64));
+    repo.backend
+        .plant_raw(
+            &foreign,
+            &serde_json::to_vec(&other.list_keys().unwrap()[0].1).unwrap(),
+        )
+        .unwrap();
+    let opened = Repository::open(repo.backend, &secret).unwrap();
+    assert!(opened.snapshots().unwrap().is_empty());
+    let report = keelhaul::ops::check::check_backend(&opened.backend, &secret).unwrap();
+    assert_eq!(report.damage.len(), 1);
+    assert_eq!(report.damage[0].object, foreign);
+    opened.remove_key(&"0".repeat(64)).unwrap();
+    assert!(check(&opened).unwrap().damage.is_empty());
+}

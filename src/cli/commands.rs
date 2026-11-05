@@ -1,10 +1,9 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
-use std::io;
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
-        Command::Version => output::version(io::stdout().lock(), cli.json)?,
+        Command::Version => output::version(output::stdout(), cli.json)?,
         command => {
             use crate::{repo::Repository, secret};
             let path = cli
@@ -51,7 +50,19 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     if cli.json {
                         println!("{}", serde_json::to_string(&report)?);
                     } else {
-                        report.text();
+                        for damage in &report.damage {
+                            println!("{damage}");
+                        }
+                        for note in &report.notes {
+                            println!("{}: {}", note.object.escape_debug(), note.problem);
+                        }
+                        if report.damage.is_empty() {
+                            println!(
+                                "no damage: {} packs, {} snapshots checked",
+                                backend.list(crate::backend::Kind::Data)?.len(),
+                                backend.list(crate::backend::Kind::Snapshots)?.len()
+                            );
+                        }
                     }
                     if !report.damage.is_empty() {
                         super::backup::completed_damage()?;
@@ -100,18 +111,14 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         &repo.subkeys(),
                         &crate::repo::lock::SystemClock,
                     )?;
-                    let text = removed
-                        .iter()
-                        .map(|id| format!("removed {id}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    let text = format!("removed {} locks", removed.len());
                     (serde_json::json!({"removed": removed}), text)
                 }
                 Command::Key { command } => {
                     let repo = Repository::open(backend, &secret)?;
                     match command {
                         KeyCommand::List => {
-                            crate::ops::key::render_list(io::stdout().lock(), &repo, cli.json)?;
+                            crate::ops::key::render_list(output::stdout(), &repo, cli.json)?;
                             return Ok(());
                         }
                         KeyCommand::Add {
@@ -154,7 +161,24 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         }
                         Err(error) => return Err(error.into()),
                     };
-                    super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
+                    if let Command::Restore {
+                        snap,
+                        target,
+                        include,
+                        host,
+                    } = command
+                    {
+                        super::audit::restore(
+                            &repo,
+                            &snap,
+                            &target,
+                            &include,
+                            host.as_deref(),
+                            cli.json,
+                        )?;
+                    } else {
+                        super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
+                    }
                     return Ok(());
                 }
                 Command::Version => unreachable!("version handled above"),

@@ -88,8 +88,9 @@ A key slot is a plaintext JSON object at `keys/<random id>`:
 `wrapped` is an envelope (§4) under the KEK with associated data `keelhaul/key-slot` and
 plaintext exactly the 32-byte master key (no compression byte). Opening a repository tries
 the supplied secret against every slot. Exactly one secret is supplied per command. Each
-slot is tried in name order until one decrypts. No slot decrypting is a wrong-password
-error (exit 1), not damage.
+slot is tried in name order until one unwraps and `config` decrypts with the resulting
+master key. If no slot unwraps, this is a wrong-password error (exit 1), not damage.
+If a slot unwraps but none authenticates `config`, report the config failure.
 
 `check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
 the BLAKE3 keyed hash (key = key-slot check subkey) of these bytes concatenated: the ASCII
@@ -270,12 +271,15 @@ A tree blob's payload describes one directory:
   valid UTF-8) is present. Likewise `target` or `target_b64` for symlinks. Names are a
   single non-empty path component: no `/`, no NUL byte, not `.` or `..`. A reader MUST
   treat a violating name as damage and never create it.
+- `name_b64` is used only when the name is not valid UTF-8. All base64 values use
+  canonical standard padded encoding. A symlink target is non-empty.
 - Entries are sorted by raw name bytes, ascending, with no duplicates.
 - Trees have no depth limit. Readers walk them iteratively and treat a tree that names one
   of its own ancestors as damage.
 - `mode` holds only the permission bits (`0o7777` mask).
 - `user` and `group` may be absent when the IDs have no names.
 - `content` lists chunk IDs in file order. Their `raw_length`s sum to `size`.
+  `size == 0` if and only if `content` is empty.
 - Hardlinks: on restore, regular files with `links > 1` and equal `(device, inode)`
   within one snapshot are restored as hardlinks to the first one restored.
 - `xattrs` is reserved for a later version; v1 writers never write it.
@@ -302,8 +306,9 @@ A snapshot object is an envelope (label `keelhaul/snapshot`) whose payload is:
 }
 ```
 
-`paths` are absolute, cleaned and sorted. The root tree has one entry per backed-up path,
-named by the path with every `%` replaced by `%25` first, then every `/` replaced by
+`paths` are absolute, cleaned and sorted. Root entries use `name` (UTF-8), never
+`name_b64`; a non-UTF-8 backup root is refused at backup time. The root tree has one
+entry per backed-up path, named by the path with every `%` replaced by `%25` first, then every `/` replaced by
 `%2F` (so `/a%2Fb` becomes `%2Fa%252Fb`). Restore reverses that encoding (`%2F` → `/`, then
 `%25` → `%`) to rebuild the original path; any other `%` sequence in a root entry name is
 damage. `files_skipped` counts entries the
@@ -351,7 +356,8 @@ A lock object is an envelope (label `keelhaul/lock`) whose payload is:
 ## 12. Test vectors
 
 `testdata/vectors/` holds JSON vectors with a fixed master key, nonce and input for:
-subkey derivation, the gear table (first 8 entries and a hash of all 256), cut points on a
+subkey derivation, the gear table (first 8 entries and an unkeyed BLAKE3 hash of all
+256 entries serialized as 2048 little-endian bytes), cut points on a
 seeded 32 MiB stream (`seed`, `len`, list of chunk lengths), chunk IDs, one envelope of
 each label, a password slot (fixed salt and cheap KDF parameters m_kib 8192, t 1, p 1),
 a key-file slot, a two-blob pack, and an index, tree and snapshot payload. The

@@ -51,3 +51,19 @@ fn target_swap_after_open_never_redirects_writes() {
     assert_eq!(std::fs::read_dir(&pinned).unwrap().count(), 1);
     assert!(Destination::new(&target).is_err());
 }
+
+#[test]
+fn invalid_metadata_never_publishes_a_final_name() {
+    let scratch = tempfile::tempdir().unwrap();
+    let destination = Destination::new(scratch.path()).unwrap();
+    let temporary = destination.temporary(Path::new("final")).unwrap();
+    let mut entry: Entry = serde_json::from_value(serde_json::json!({
+        "name":"final","type":"file","mode":420,
+        "mtime":"2026-11-04T14:03:22.123456789Z", "ctime":"2026-11-04T14:03:22.123456789Z",
+        "uid":0,"gid":0,"inode":1,"device":1,"links":1,"size":0,"content":[]
+    }))
+    .unwrap();
+    entry.mtime = "invalid".into();
+    assert!(temporary.publish(&entry).is_err());
+    assert!(!scratch.path().join("final").exists());
+}

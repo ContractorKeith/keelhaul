@@ -2,7 +2,8 @@
 mod preflight;
 mod publication;
 use crate::{format::tree::Entry, repo::Error};
-use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, RenameFlags, Timespec, Timestamps, Uid};
+pub(super) use publication::Temporary;
+use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, Timespec, Timestamps, Uid};
 use std::{
     ffi::OsString,
     fs::File,
@@ -11,6 +12,7 @@ use std::{
 };
 pub(super) struct Destination {
     root: File,
+    created: std::cell::RefCell<std::collections::HashMap<(FileIdentity, FileIdentity), OsString>>,
 }
 const DIRECTORY: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
@@ -30,7 +32,10 @@ impl Destination {
             Err(error) => return Err(os(error)),
         }
         .into();
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            created: Default::default(),
+        })
     }
     fn directory(&self, path: &Path) -> Result<File, Error> {
         self.walk_directory(path, true)
@@ -44,13 +49,14 @@ impl Destination {
             let Component::Normal(name) = component else {
                 return Err(Error::Refused("unsafe restore component".into()));
             };
+            self.check_name(&current, name)?;
             match fs::openat(&current, name, DIRECTORY, Mode::empty()) {
                 Ok(fd) => current = fd.into(),
                 Err(rustix::io::Errno::NOENT) if create => {
                     fs::mkdirat(&current, name, Mode::from_raw_mode(0o700)).map_err(os)?;
-                    current = fs::openat(&current, name, DIRECTORY, Mode::empty())
-                        .map_err(os)?
-                        .into();
+                    let next = fs::openat(&current, name, DIRECTORY, Mode::empty()).map_err(os)?;
+                    self.record_name(&current, name)?;
+                    current = next.into();
                 }
                 Err(e) => return Err(os(e)),
             }
@@ -65,6 +71,51 @@ impl Destination {
             .file_name()
             .ok_or_else(|| Error::Refused("restore path has no name".into()))?;
         Ok((self.directory(parent)?, name.into()))
+    }
+    // Compare filesystem identities, rather than assuming a particular case or
+    // Unicode folding rule. Names are scoped to the pinned parent directory.
+    pub fn check_collision(&self, path: &Path) -> Result<(), Error> {
+        if path.as_os_str().is_empty() {
+            return Ok(());
+        }
+        let (parent, name) = self.parent(path)?;
+        self.check_name(&parent, &name)
+    }
+    fn check_name(&self, parent: &File, name: &std::ffi::OsStr) -> Result<(), Error> {
+        let parent_id = FileIdentity::from_stat(&fs::fstat(parent).map_err(os)?);
+        match fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => {
+                let id = FileIdentity::from_stat(&stat);
+                if let Some(other) = self.created.borrow().get(&(parent_id, id))
+                    && other != name
+                {
+                    return Err(Error::Refused(format!(
+                        "name collides with {} on this filesystem",
+                        other.to_string_lossy()
+                    )));
+                }
+                Ok(())
+            }
+            Err(rustix::io::Errno::NOENT) => Ok(()),
+            Err(error) => Err(os(error)),
+        }
+    }
+    fn record_name(&self, parent: &File, name: &std::ffi::OsStr) -> Result<(), Error> {
+        let directory = FileIdentity::from_stat(&fs::fstat(parent).map_err(os)?);
+        let identity = FileIdentity::from_stat(
+            &fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(os)?,
+        );
+        self.created
+            .borrow_mut()
+            .insert((directory, identity), name.into());
+        Ok(())
+    }
+    pub fn remember(&self, path: &Path) -> Result<(), Error> {
+        if path.as_os_str().is_empty() {
+            return Ok(());
+        }
+        let (parent, name) = self.parent(path)?;
+        self.record_name(&parent, &name)
     }
     pub fn mkdir(&self, path: &Path) -> Result<(), Error> {
         if path.as_os_str().is_empty() {
@@ -158,7 +209,7 @@ impl Destination {
         apply(&self.directory(path)?, entry)
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct FileIdentity {
     device: fs::Dev,
     inode: u64,
@@ -171,48 +222,7 @@ impl FileIdentity {
         }
     }
 }
-pub(super) struct Temporary {
-    parent: File,
-    name: OsString,
-    final_name: OsString,
-    pub file: File,
-}
-impl Temporary {
-    pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
-        self.file.sync_all()?;
-        let renamed = fs::renameat_with(
-            &self.parent,
-            &self.name,
-            &self.parent,
-            &self.final_name,
-            RenameFlags::NOREPLACE,
-        );
-        publication::finish(
-            renamed,
-            &self.final_name,
-            || {
-                fs::linkat(
-                    &self.parent,
-                    &self.name,
-                    &self.parent,
-                    &self.final_name,
-                    AtFlags::empty(),
-                )
-            },
-            || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
-        )?;
-        apply(&self.file, entry)?;
-        self.file.sync_all()?;
-        self.parent.sync_all()?;
-        let stat = fs::fstat(&self.file).map_err(os)?;
-        Ok(FileIdentity::from_stat(&stat))
-    }
-}
-impl Drop for Temporary {
-    fn drop(&mut self) {
-        let _ = fs::unlinkat(&self.parent, &self.name, AtFlags::empty());
-    }
-}
+
 fn owners(entry: &Entry) -> Result<(Uid, Gid), Error> {
     if entry.uid == u32::MAX || entry.gid == u32::MAX {
         return Err(Error::Refused("cannot restore sentinel owner ID".into()));

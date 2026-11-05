@@ -17,24 +17,46 @@ use std::{
 };
 
 #[derive(Debug, thiserror::Error)]
+#[error("{}", display_backend(self))]
 pub enum BackendError {
-    #[error("bucket not found: {0}")]
     BucketNotFound(String),
-    #[error("invalid configuration: {0}")]
     InvalidConfig(&'static str),
-    #[error("object not found: {0}")]
     NotFound(ObjectName),
-    #[error("object already exists with different content: {0}")]
     AlreadyExists(ObjectName),
-    #[error("I/O error for {name:?} at {path:?}: {source}")]
     Io {
         name: Option<ObjectName>,
         path: Option<PathBuf>,
         #[source]
         source: io::Error,
     },
-    #[error("invalid object name: {0}")]
     InvalidName(String),
+}
+
+fn display_backend(error: &BackendError) -> String {
+    match error {
+        BackendError::BucketNotFound(bucket) => format!("bucket not found: {bucket}"),
+        BackendError::InvalidConfig(message) => format!("invalid configuration: {message}"),
+        BackendError::NotFound(name) => format!("object not found: {name}"),
+        BackendError::AlreadyExists(name) => {
+            format!("object already exists with different content: {name}")
+        }
+        BackendError::InvalidName(name) => format!("invalid object name: {name}"),
+        BackendError::Io { name, path, source } => {
+            let detail = source.to_string();
+            let mut text = String::from("I/O error");
+            if let Some(name) = name {
+                text.push_str(&format!(" for {name}"));
+            }
+            if let Some(path) = path {
+                let path = path.display().to_string();
+                // Some causes, including a busy directory, already name the path.
+                if !detail.contains(&path) {
+                    text.push_str(&format!(" at {path}"));
+                }
+            }
+            format!("{text}: {detail}")
+        }
+    }
 }
 
 impl From<io::Error> for BackendError {

@@ -1,3 +1,7 @@
+// This scope includes the legacy backup renderer without changing its source.
+macro_rules! println {
+    ($($arg:tt)*) => { crate::output::line(format_args!($($arg)*))? };
+}
 mod audit;
 mod backup;
 mod commands;
@@ -54,12 +58,16 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum Command {
+    #[command(about = "Show the installed version")]
     Version,
+    #[command(about = "Check repository structure and references")]
     Check,
+    #[command(about = "Read and verify every stored byte")]
     Verify {
         #[arg(long)]
         subset: Option<crate::ops::verify::Subset>,
     },
+    #[command(about = "Back up files and directories")]
     Backup {
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -81,6 +89,7 @@ pub(super) enum Command {
         #[arg(long)]
         one_file_system: bool,
     },
+    #[command(about = "List snapshots")]
     Snapshots {
         #[arg(long)]
         host: Option<String>,
@@ -110,15 +119,20 @@ pub(super) enum Command {
         #[arg(long)]
         host: Option<String>,
     },
+    #[command(about = "Remove snapshots by ID or retention policy")]
     Forget(crate::ops::forget::Options),
+    #[command(about = "Reclaim unreferenced data and repack sparse packs")]
     Prune {
         #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u8).range(0..=100))]
         max_unused: u8,
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Remove stale or dead repository locks")]
     Unlock,
+    #[command(about = "Create an encrypted repository")]
     Init,
+    #[command(about = "Manage repository key slots")]
     Key {
         #[command(subcommand)]
         command: KeyCommand,
@@ -127,14 +141,15 @@ pub(super) enum Command {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum KeyCommand {
+    #[command(about = "List repository key slots")]
     List,
+    #[command(about = "Add a password or key-file slot")]
     Add {
         #[arg(long, conflicts_with = "new_password_file")]
         new_key_file: Option<PathBuf>,
         #[arg(long, env = "KEELHAUL_NEW_PASSWORD_FILE", hide_env_values = true)]
         new_password_file: Option<PathBuf>,
     },
-    Remove {
-        id: String,
-    },
+    #[command(about = "Remove a key slot")]
+    Remove { id: String },
 }

@@ -60,6 +60,11 @@ Restore recreates the saved absolute path beneath the target directory. Test a
 restore before relying on a backup. Store your password or key file separately;
 losing all unlocking secrets makes the backup unrecoverable.
 
+The hostname groups snapshots for `latest`, parent selection and retention, and
+identifies lock ownership. Pass `--host` to backup (and to `ls`/`restore` when
+selecting `latest`) on machines whose hostname changes, such as macOS with DHCP,
+or on cloned VMs. Give cloned machines distinct stable hostnames for lock ownership.
+
 For SFTP, configure a system SSH alias in `~/.ssh/config`:
 
 ```sshconfig
@@ -98,7 +103,8 @@ create-once semantics during concurrent initialization; initialize a repository 
 
 Use one secret source: `--password-file PATH` / `KEELHAUL_PASSWORD_FILE`,
 `--password-command COMMAND` / `KEELHAUL_PASSWORD_COMMAND`, or `--key-file PATH` /
-`KEELHAUL_KEY_FILE`. Otherwise keelhaul prompts on a TTY. Pass a file path or a
+`KEELHAUL_KEY_FILE`. Otherwise keelhaul prompts on a TTY. A password file’s single
+trailing `\n` or `\r\n` is stripped. Pass a file path or a
 credential-manager command, never the password itself in argv. Protect secret
 files with mode 600. Scheduled runs require a noninteractive secret source.
 

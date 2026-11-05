@@ -1,5 +1,5 @@
 use super::*;
-use rustix::io::Errno;
+use rustix::{fs::RenameFlags, io::Errno};
 /// A hard link publishes the already verified inode atomically without replacing
 /// an existing name, on filesystems that lack the no-replace rename operation.
 pub(super) fn finish(
@@ -29,6 +29,47 @@ pub(super) fn finish(
             name.to_string_lossy()
         ))),
         Err(e) => Err(os(e)),
+    }
+}
+pub(in crate::ops::restore) struct Temporary {
+    pub(super) parent: File,
+    pub(super) name: OsString,
+    pub(super) final_name: OsString,
+    pub file: File,
+}
+impl Temporary {
+    pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
+        apply(&self.file, entry)?;
+        self.file.sync_all()?;
+        let renamed = fs::renameat_with(
+            &self.parent,
+            &self.name,
+            &self.parent,
+            &self.final_name,
+            RenameFlags::NOREPLACE,
+        );
+        finish(
+            renamed,
+            &self.final_name,
+            || {
+                fs::linkat(
+                    &self.parent,
+                    &self.name,
+                    &self.parent,
+                    &self.final_name,
+                    AtFlags::empty(),
+                )
+            },
+            || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
+        )?;
+        self.parent.sync_all()?;
+        let stat = fs::fstat(&self.file).map_err(os)?;
+        Ok(FileIdentity::from_stat(&stat))
+    }
+}
+impl Drop for Temporary {
+    fn drop(&mut self) {
+        let _ = fs::unlinkat(&self.parent, &self.name, AtFlags::empty());
     }
 }
 #[cfg(test)]

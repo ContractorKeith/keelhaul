@@ -69,8 +69,11 @@ impl Planner<'_> {
                     let parsed = self.cache.salvage(store, &id);
                     let (tree, problems) = match parsed {
                         Ok(t) => t,
-                        Err(e) => {
-                            self.report.damage(e)?;
+                        Err(error) => {
+                            match crate::damage::Damage::from_error(error) {
+                                Ok(damage) => self.report.damaged.push(damage),
+                                Err(error) => self.report.failure(&base, error),
+                            }
                             continue;
                         }
                     };
@@ -175,7 +178,9 @@ pub(super) fn build<B: Backend>(
             return Err(Error::Refused("include path must not contain '..'".into()));
         }
         normalized.push(
-            path.components()
+            crate::ops::paths::normalize_root(path)
+                .map_err(|error| Error::Refused(format!("{}: {error}", path.display())))?
+                .components()
                 .filter(|c| matches!(c, Component::Normal(_)))
                 .collect(),
         );

@@ -106,7 +106,12 @@ fn preexisting_symlink_conflict_is_refused_before_writes() {
         .next()
         .unwrap();
     symlink(&outside, target.join(first.as_os_str())).unwrap();
-    assert!(restore(&repo, "latest", &target, &[]).is_err());
+    assert!(
+        !restore(&repo, "latest", &target, &[])
+            .unwrap()
+            .failed
+            .is_empty()
+    );
     assert!(fs::read_dir(outside).unwrap().next().is_none());
     assert!(
         restore(

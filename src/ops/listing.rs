@@ -52,13 +52,12 @@ fn ls_for_host_locked<B: Backend>(
     let (_, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
     let mut output = Vec::new();
-    let filter = filter.map(|p| {
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            Path::new("/").join(p)
-        }
-    });
+    let filter = filter
+        .map(|path| {
+            super::paths::normalize_root(path)
+                .map_err(|error| Error::Refused(format!("{}: {error}", path.display())))
+        })
+        .transpose()?;
     walk(
         &mut store,
         &snapshot.tree,
@@ -68,6 +67,14 @@ fn ls_for_host_locked<B: Backend>(
         &mut output,
         filter.as_deref(),
     )?;
+    if let Some(filter) = filter
+        && !output.iter().any(|entry| entry.raw_path == filter)
+    {
+        return Err(Error::Refused(format!(
+            "path not found in snapshot: {}",
+            filter.display()
+        )));
+    }
     Ok(output)
 }
 enum Work {

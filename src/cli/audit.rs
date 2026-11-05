@@ -7,17 +7,52 @@ pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
         struct Report {
             restored: u64,
             damage: Vec<Damage>,
+            failed: Vec<crate::ops::restore::Failure>,
         }
         println!(
             "{}",
             serde_json::to_string(&Report {
                 restored: 0,
-                damage: vec![damage]
+                damage: vec![damage],
+                failed: Vec::new(),
             })?
         );
     } else {
         println!("{damage}");
     }
     super::backup::completed_damage()?;
+    Ok(())
+}
+
+pub(super) fn restore<B: crate::backend::Backend>(
+    repo: &crate::repo::Repository<B>,
+    snap: &str,
+    target: &std::path::Path,
+    includes: &[std::path::PathBuf],
+    host: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let report = match crate::ops::restore::restore_for_host(repo, snap, target, includes, host) {
+        Ok(report) => report,
+        Err(error) => return restore_failure(error, json),
+    };
+    if json {
+        println!("{}", serde_json::to_string(&report)?);
+    } else {
+        println!("restored {} entries", report.restored);
+        for damage in &report.damaged {
+            println!("{damage}");
+        }
+        for failure in &report.failed {
+            println!("{}: {}", failure.path, failure.error);
+        }
+    }
+    if !report.damaged.is_empty() {
+        super::backup::completed_damage()?;
+    }
+    if !report.failed.is_empty() {
+        // Report already rendered; avoid emitting a second JSON document.
+        std::process::exit(1);
+    }
     Ok(())
 }
