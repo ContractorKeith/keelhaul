@@ -1,6 +1,6 @@
 # keelhaul — Build Plan
 
-Status: planned, no code yet (2026-11-04). Decisions come from the 2026-11-04 grill. Studied
+Status: 0.1.0 released 2026-11-05 (all v1 rows shipped; Later rows remain). Decisions come from the 2026-11-04 grill. Studied
 restic (scope and spec model), borg, kopia, duplicacy (license excludes it as a model) and
 rclone (backend shape). The repository format is `docs/SPEC.md`.
 
