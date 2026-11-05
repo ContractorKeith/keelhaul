@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Default, Serialize)]
 pub struct Report {
     pub restored: u64,
+    #[serde(skip)]
     pub snapshot: String,
     #[serde(rename = "damage")]
     pub damaged: Vec<crate::damage::Damage>,

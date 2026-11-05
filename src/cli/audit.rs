@@ -38,7 +38,20 @@ pub(super) fn restore<B: crate::backend::Backend>(
         Err(error) => return restore_failure(error, json),
     };
     if json {
-        println!("{}", serde_json::to_string(&report)?);
+        #[derive(serde::Serialize)]
+        struct Output<'a> {
+            #[serde(flatten)]
+            report: &'a crate::ops::restore::Report,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            snapshot: Option<&'a str>,
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&Output {
+                report: &report,
+                snapshot: (!report.damaged.is_empty()).then_some(report.snapshot.as_str()),
+            })?
+        );
     } else {
         println!(
             "restored {} entries from snapshot {}",
