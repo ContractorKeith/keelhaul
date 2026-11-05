@@ -61,3 +61,45 @@ pub(super) fn snapshots<B: Backend>(
     }
     Ok(())
 }
+
+// Only failed lock writes on readers suggest bypassing locking.
+pub(super) fn lock_hint(error: anyhow::Error, reader: bool) -> anyhow::Error {
+    if reader && error.chain().any(|cause| {
+        matches!(cause.downcast_ref::<crate::backend::BackendError>(),
+            Some(crate::backend::BackendError::Io { name: Some(name), source, .. })
+            if name.as_str().starts_with("locks/") &&
+                (source.kind() == std::io::ErrorKind::PermissionDenied || source.raw_os_error() == Some(30) || source.to_string().contains("HTTP 403")))
+    }) {
+        anyhow::anyhow!("{error}; the repository looks read-only; use --no-lock for snapshots, ls, restore, check and verify")
+    } else {
+        error
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_reader_lock_permission_failures_get_the_hint() {
+        for (name, code, reader, expected) in [
+            ("locks/", 13, true, true),
+            ("locks/", 30, true, true),
+            ("data/", 13, true, false),
+            ("locks/", 13, false, false),
+            ("locks/", 5, true, false),
+        ] {
+            let name = crate::backend::ObjectName::new(&format!("{name}{}", "ab".repeat(32))).ok();
+            let error = crate::backend::BackendError::Io {
+                name,
+                path: None,
+                source: std::io::Error::from_raw_os_error(code),
+            };
+            assert_eq!(
+                lock_hint(error.into(), reader)
+                    .to_string()
+                    .contains("use --no-lock"),
+                expected
+            );
+        }
+    }
+}

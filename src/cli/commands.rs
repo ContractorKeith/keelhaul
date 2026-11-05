@@ -1,7 +1,18 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
 
-pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+pub fn run(cli: Cli) -> anyhow::Result<()> {
+    let read_only = matches!(
+        cli.command,
+        Command::Snapshots { .. }
+            | Command::Ls { .. }
+            | Command::Restore { .. }
+            | Command::Check
+            | Command::Verify { .. }
+    );
+    run_inner(cli).map_err(|error| super::readers::lock_hint(error, read_only))
+}
+fn run_inner(mut cli: Cli) -> anyhow::Result<()> {
     output::configure(cli.quiet, cli.json);
     if cli.no_lock {
         if !matches!(

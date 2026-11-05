@@ -195,7 +195,7 @@ fn write<B: Backend>(backend: &B, keys: &Subkeys, payload: &Lock) -> Result<Obje
     let name = ObjectName::new(&format!("locks/{}", blake3::hash(&bytes).to_hex()))?;
     if let Err(error) = backend.write(&name, &bytes) {
         let _ = backend.delete(&name);
-        return Err(error.into());
+        return Err(error.context(Some(&name), None).into());
     }
     Ok(name)
 }
