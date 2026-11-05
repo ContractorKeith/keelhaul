@@ -83,6 +83,10 @@ keelhaul backup ~/Documents
 The system `ssh` supplies authentication, host-key checking and alias resolution.
 Connect with `ssh backup-nas` first to verify your SSH setup.
 
+S3 requests default to 20 seconds per attempt (`KEELHAUL_S3_TIMEOUT_SECS`),
+with an overall 120-second operation deadline across retries and backoff
+(`KEELHAUL_S3_DEADLINE_SECS`). Both accept integer seconds from 1 to 3600.
+
 For S3-compatible storage, provide credentials through your environment (for
 example, loaded by your credential manager):
 

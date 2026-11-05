@@ -23,6 +23,8 @@ use std::path::PathBuf;
 pub struct Cli {
     /// Repository path, sftp:[user@]host:/path, or s3:https://host/bucket[/prefix].
     /// S3 bucket is the first path segment; endpoint path prefixes are unsupported.
+    /// S3: KEELHAUL_S3_TIMEOUT_SECS bounds each attempt (default 20);
+    /// KEELHAUL_S3_DEADLINE_SECS bounds an operation across retries (default 120). Both accept 1–3600 seconds.
     #[arg(short = 'r', long, env = "KEELHAUL_REPO", global = true)]
     repo: Option<String>,
     #[arg(

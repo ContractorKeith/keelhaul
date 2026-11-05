@@ -105,9 +105,11 @@ pub struct S3Config {
     pub location: S3Location,
     credentials: Credentials,
     pub region: String,
-    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, 1..=3600, default 60 seconds).
+    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, 1..=3600, default 20 seconds).
     /// Up to five attempts run, with capped, jittered backoff between attempts.
     pub timeout: Duration,
+    /// Overall HTTP operation deadline across retries and backoff (default 120 seconds).
+    pub deadline: Duration,
     pub verbose: bool,
 }
 
@@ -124,13 +126,15 @@ impl S3Config {
             location,
             credentials,
             region: "us-east-1".into(),
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_secs(20),
+            deadline: Duration::from_secs(120),
             verbose: false,
         }
     }
 
     pub(super) fn connect(self) -> Result<S3Backend, BackendError> {
         checked_timeout(self.timeout)?;
+        parse_deadline(Some(&self.deadline.as_secs().to_string()))?;
         let bucket = self.location.bucket(&self.region)?;
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
@@ -143,6 +147,8 @@ impl S3Config {
             credentials: self.credentials,
             prefix: self.location.prefix,
             agent,
+            timeout: self.timeout,
+            deadline: self.deadline,
             conditional: Mutex::new(None),
             verbose: self.verbose,
         })
@@ -156,6 +162,16 @@ impl S3Config {
                 _ => Err(timeout_error()),
             })?;
         let timeout = parse_timeout(value.as_deref())?;
+        let deadline_value =
+            env::var("KEELHAUL_S3_DEADLINE_SECS")
+                .map(Some)
+                .or_else(|e| match e {
+                    env::VarError::NotPresent => Ok(None),
+                    _ => Err(BackendError::InvalidConfig(
+                        "KEELHAUL_S3_DEADLINE_SECS must be an integer in 1..=3600",
+                    )),
+                })?;
+        let deadline = parse_deadline(deadline_value.as_deref())?;
         let credentials = Credentials::from_env()
             .ok_or_else(|| error("S3 requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"))?;
         Ok(Self {
@@ -163,6 +179,7 @@ impl S3Config {
             credentials,
             region: env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".into()),
             timeout,
+            deadline,
             verbose,
         })
     }
@@ -201,15 +218,35 @@ fn checked_timeout(timeout: Duration) -> Result<Duration, BackendError> {
 
 fn parse_timeout(value: Option<&str>) -> Result<Duration, BackendError> {
     let seconds = value
-        .unwrap_or("60")
+        .unwrap_or("20")
         .parse::<u64>()
         .map_err(|_| timeout_error())?;
     checked_timeout(Duration::from_secs(seconds))
 }
 
+fn parse_deadline(value: Option<&str>) -> Result<Duration, BackendError> {
+    let invalid =
+        || BackendError::InvalidConfig("KEELHAUL_S3_DEADLINE_SECS must be an integer in 1..=3600");
+    let seconds = value
+        .unwrap_or("120")
+        .parse::<u64>()
+        .map_err(|_| invalid())?;
+    if !(1..=3600).contains(&seconds) {
+        return Err(invalid());
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deadline_defaults_and_bounds() {
+        assert_eq!(parse_deadline(None).unwrap(), Duration::from_secs(120));
+        for value in ["0", "3601", "bad", "18446744073709551615"] {
+            assert!(parse_deadline(Some(value)).is_err());
+        }
+    }
     #[test]
     fn s3_timeout_bounds_refuse_zero_large_and_max_values() {
         for value in ["0", "3601", "18446744073709551615", "bad"] {
@@ -224,7 +261,7 @@ mod tests {
                 Duration::from_secs(value)
             );
         }
-        assert_eq!(parse_timeout(None).unwrap(), Duration::from_secs(60));
+        assert_eq!(parse_timeout(None).unwrap(), Duration::from_secs(20));
         let mut config = S3Config::new(
             S3Location::parse("s3:https://host/bucket").unwrap(),
             Credentials::new("access", "secret"),

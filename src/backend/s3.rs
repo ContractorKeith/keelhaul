@@ -1,5 +1,6 @@
 //! Path-style S3, signed with rusty-s3 and sent synchronously over rustls.
 mod config;
+mod deadline;
 mod error_code;
 mod http;
 mod list;
@@ -22,6 +23,8 @@ pub struct S3Backend {
     credentials: Credentials,
     prefix: String,
     agent: ureq::Agent,
+    timeout: std::time::Duration,
+    deadline: std::time::Duration,
     conditional: Mutex<Option<bool>>,
     verbose: bool,
 }
