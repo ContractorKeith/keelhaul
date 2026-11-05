@@ -10,7 +10,7 @@ homepage = "https://github.com/ContractorKeith/keelhaul"
 readme = "README.md"
 keywords = ["backup", "encryption", "deduplication", "cli", "snapshot"]
 categories = ["command-line-utilities", "filesystem", "cryptography"]
-include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md", "/docs/SPEC.md", "/testdata/vectors/**"]
+include = ["/tests/**", "/testdata/golden/**", "/src/**", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md", "/docs/SPEC.md", "/testdata/vectors/**"]
 
 [features]
 default = []
