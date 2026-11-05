@@ -184,7 +184,7 @@ golden tests. Damage list (check, verify, restore):
 `unknown-object`, `unused-index`.
 
 Exit codes: 0 ok · 1 error (I/O, wrong password, refused operation) · 2 usage · 3 damage
-found (check, verify, restore, prune) · 4 repository locked.
+found (check, verify, restore, prune, snapshots) · 4 repository locked.
 
 ## 7. Milestones
 
