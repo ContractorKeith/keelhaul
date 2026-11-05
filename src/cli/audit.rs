@@ -48,7 +48,7 @@ pub(super) fn restore<B: crate::backend::Backend>(
             crate::output::damage(&damage);
         }
         for failure in &report.failed {
-            crate::warning!("{}: {}", failure.path, failure.error);
+            eprintln!("{}: {}", failure.path, failure.error);
         }
     }
     if !report.damaged.is_empty() {

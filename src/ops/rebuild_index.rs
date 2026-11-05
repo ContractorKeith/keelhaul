@@ -25,9 +25,12 @@ pub fn rebuild<B: Backend>(repo: &Repository<B>, dry_run: bool) -> Result<Summar
         let mut damage = crate::damage::Report::default();
         let mut cached = std::collections::HashMap::new();
         for entry in &old {
-            if let Ok(bytes) = repo.read_object(&entry.name, Label::Index)
-                && let Ok(index) = Index::parse(&bytes)
-            {
+            let bytes = match repo.read_object(&entry.name, Label::Index) {
+                Ok(bytes) => bytes,
+                Err(Error::Damage { .. }) => continue,
+                Err(error) => return Err(error),
+            };
+            if let Ok(index) = Index::parse(&bytes) {
                 for pack in index.packs {
                     cached.entry(pack.id).or_insert(pack.blobs);
                 }

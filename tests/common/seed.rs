@@ -1,4 +1,8 @@
 //! A fresh run explores new cases; KEELHAUL_SEED replays a reported failure.
+#[expect(
+    clippy::explicit_write,
+    reason = "print replay seeds even when libtest captures successful test output"
+)]
 pub fn seed() -> u64 {
     use std::io::Write;
     let seed = std::env::var("KEELHAUL_SEED")

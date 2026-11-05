@@ -108,6 +108,7 @@ impl<B: Backend> Repository<B> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let mut unreadable = Vec::new();
+        let mut parsed = Vec::new();
         let mut master = None;
         let config = match backend.read(&ObjectName::new("config")?) {
             Ok(bytes) => Some(bytes),
@@ -139,6 +140,18 @@ impl<B: Backend> Repository<B> {
                 if master.is_none() {
                     master = Some((key, Some(entry.name.to_string())));
                 }
+            }
+            parsed.push((entry.name.to_string(), slot));
+        }
+        if let Some((key, opened)) = &mut master {
+            // A sole slot (or slots agreeing on the same master key) identifies
+            // config damage. A foreign slot disagrees with the repository's
+            // other slots as well as failing config authentication.
+            if !parsed.iter().any(|(name, slot)| {
+                Some(name) != opened.as_ref()
+                    && slot::verify_check(slot, &key.subkeys().key_slot_check).is_err()
+            }) {
+                *opened = None;
             }
         }
         master.ok_or_else(|| {

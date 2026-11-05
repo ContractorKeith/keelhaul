@@ -45,6 +45,13 @@ fn every_happy_command_is_quiet_but_damage_and_json_survive() {
             "{args:?}: {out:?}"
         );
     }
+    let conflict = run(
+        &repo,
+        &key,
+        &["restore", "latest", "--target", target.to_str().unwrap()],
+    );
+    assert_eq!(conflict.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("restore conflict"));
     let out = run(&repo, &key, &["--json", "snapshots"]);
     assert!(!out.stdout.is_empty());
     std::fs::write(repo.join("config"), b"damaged").unwrap();
