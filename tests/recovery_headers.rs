@@ -35,6 +35,20 @@ fn indexed_blobs_survive_header_and_trailer_corruption() {
         );
         let listed = ls_report_for_host(&repo, "latest", None, None).unwrap();
         assert_eq!(listed.damage[0].problem, "bad-header");
+        let healed = keelhaul::ops::backup::backup_with_options(
+            &repo,
+            std::slice::from_ref(&source),
+            vec![],
+            &keelhaul::ops::backup::Options {
+                heal: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            healed.summary.data_blobs_added, 0,
+            "intact indexed blobs should remain reusable"
+        );
     }
 }
 

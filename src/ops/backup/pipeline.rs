@@ -143,7 +143,6 @@ pub(super) fn run<B: Backend>(
         // An early return drops the receivers and store's upload sender, which
         // releases every blocked send before the scope joins its threads.
         let mut summary = Summary::default();
-        let mut healing = Default::default();
         let mut blobs_healed = 0;
         let mut skipped = Vec::new();
         let mut files_read = 0;
@@ -158,7 +157,7 @@ pub(super) fn run<B: Backend>(
                 }
                 Event::Blob(blob) => {
                     if options.heal {
-                        blobs_healed += u64::from(store.add_healing(blob, &mut healing)?);
+                        blobs_healed += u64::from(store.add_healing(blob)?);
                     } else {
                         store.add_sealed(blob)?;
                     }
@@ -211,6 +210,9 @@ pub(super) fn run<B: Backend>(
         let blobs = super::publication::referenced_blobs(&mut store, &tree)?;
         summary.data_blobs_added = store.data_blobs_added;
         summary.bytes_added = store.bytes_added;
+        for damage in &store.damage {
+            crate::output::damage(damage);
+        }
         // The sender must be dropped inside the scope, before it joins uploads.
         drop(store);
         for _ in 0..jobs {
