@@ -45,14 +45,35 @@ pub(super) fn snapshots<B: Backend>(
             .collect::<Result<Vec<_>, serde_json::Error>>()?;
         println!("{}", serde_json::to_string(&values)?);
     } else {
-        println!("ID        TIME                            HOST  PATHS");
-        for (id, s) in selected {
+        let rows = selected
+            .iter()
+            .map(|(id, s)| {
+                [
+                    super::backup::short_id(id, &ids).to_owned(),
+                    s.time.clone(),
+                    s.host.clone(),
+                    s.paths.join(", "),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let mut widths = [2, 4, 4];
+        for row in &rows {
+            for i in 0..3 {
+                widths[i] = widths[i].max(row[i].chars().count());
+            }
+        }
+        for row in
+            std::iter::once(["ID".into(), "TIME".into(), "HOST".into(), "PATHS".into()]).chain(rows)
+        {
             println!(
-                "{}  {}  {}  {}",
-                super::backup::short_id(&id, &ids),
-                s.time,
-                s.host,
-                s.paths.join(", ")
+                "{:<id$}  {:<time$}  {:<host$}  {}",
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                id = widths[0],
+                time = widths[1],
+                host = widths[2]
             );
         }
     }

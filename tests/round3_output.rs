@@ -47,3 +47,29 @@ fn verify_summary_counts_only_selected_packs() {
         "{out:?}"
     );
 }
+
+#[test]
+fn snapshot_columns_align_to_the_widest_host() {
+    let dir = fixture();
+    let source = dir.path().join("file");
+    fs::write(&source, b"contents").unwrap();
+    for host in ["a", "very-long-hostname"] {
+        assert!(
+            run(
+                dir.path(),
+                &["backup", source.to_str().unwrap(), "--host", host]
+            )
+            .status
+            .success()
+        );
+    }
+    let out = run(dir.path(), &["snapshots"]);
+    assert!(out.status.success());
+    let text = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 3);
+    let column = lines[0].find("PATHS").unwrap();
+    for row in &lines[1..] {
+        assert_eq!(row.find(source.to_str().unwrap()), Some(column), "{text}");
+    }
+}
