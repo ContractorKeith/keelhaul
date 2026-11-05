@@ -97,20 +97,12 @@ impl Destination {
                                     == fs::FileType::Directory =>
                         {
                             current = fs::openat(&current, *name, DIRECTORY, Mode::empty())
-                                .map_err(|e| {
-                                    Error::Refused(format!(
-                                        "restore conflict: {}: {e}",
-                                        prefix.display()
-                                    ))
-                                })?
+                                .map_err(|e| Error::Refused(format!("restore conflict: {e}")))?
                                 .into();
                             result.remember(prefix.clone(), &current)?;
                         }
                         Ok(_) => {
-                            return Err(Error::Refused(format!(
-                                "restore conflict: {}",
-                                prefix.display()
-                            )));
+                            return Err(Error::Refused("restore conflict".into()));
                         }
                         Err(rustix::io::Errno::NOENT) => break,
                         Err(e) => return Err(os(e)),

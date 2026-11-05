@@ -23,6 +23,11 @@ fn os(error: rustix::io::Errno) -> Error {
 }
 impl Destination {
     pub fn new(target: &Path) -> Result<Self, Error> {
+        if std::fs::symlink_metadata(target).is_ok_and(|m| m.is_symlink()) {
+            return Err(Error::Refused(
+                "target is a symlink; pass the directory it points to".into(),
+            ));
+        }
         let root = match fs::open(target, DIRECTORY, Mode::empty()) {
             Ok(fd) => fd,
             Err(rustix::io::Errno::NOENT) => {

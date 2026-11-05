@@ -58,6 +58,8 @@ pub struct Group {
 #[derive(Debug, Serialize)]
 pub struct Report {
     pub groups: Vec<Group>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prune: Option<super::prune::Summary>,
 }
 impl Options {
     fn counts(&self) -> [Option<usize>; 6] {
@@ -145,7 +147,7 @@ fn forget_with_offsets<B: Backend>(
         for selector in &options.snapshots {
             explicit.insert(repo.select_snapshot(selector)?.0);
         }
-        let report = plan(scanned.entries, options, &explicit, &mut offset)?;
+        let mut report = plan(scanned.entries, options, &explicit, &mut offset)?;
         if !options.dry_run {
             guard.self_check()?;
             for group in &report.groups {
@@ -156,7 +158,13 @@ fn forget_with_offsets<B: Backend>(
             }
         }
         if options.prune {
-            super::prune::run(repo, 20, options.dry_run, &SystemClock, guard)?;
+            report.prune = Some(super::prune::run(
+                repo,
+                20,
+                options.dry_run,
+                &SystemClock,
+                guard,
+            )?);
         }
         Ok(report)
     })
@@ -187,7 +195,10 @@ pub fn plan(
         };
         groups.entry(key).or_default().push((id, snapshot));
     }
-    let mut report = Report { groups: Vec::new() };
+    let mut report = Report {
+        groups: Vec::new(),
+        prune: None,
+    };
     let mut warned = false;
     for (key, mut snapshots) in groups {
         snapshots.sort_by(|a, b| b.1.time.cmp(&a.1.time).then(b.0.cmp(&a.0)));

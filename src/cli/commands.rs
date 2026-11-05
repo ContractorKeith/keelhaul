@@ -9,7 +9,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
             use crate::{repo::Repository, secret};
             let path = cli
                 .repo
-                .ok_or_else(|| anyhow::anyhow!("--repo is required"))?;
+                .ok_or_else(|| crate::repo::Error::Usage("--repo is required".into()))?;
             let initializing = matches!(command, Command::Init);
             let backend = super::repo::select(&path, initializing, cli.verbose > 0)?;
             #[cfg(feature = "fault-injection")]
@@ -74,7 +74,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                     options.validate()?;
                     let repo = Repository::open(backend, &secret)?;
                     let report = crate::ops::forget::forget(&repo, options)?;
-                    let text = report
+                    let mut text = report
                         .groups
                         .iter()
                         .flat_map(|g| {
@@ -85,6 +85,18 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
+                    if let Some(summary) = &report.prune {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(&format!(
+                            "{} packs removed, {} repacked, {} bytes freed{}",
+                            summary.packs_removed,
+                            summary.packs_repacked,
+                            summary.bytes_freed,
+                            if options.dry_run { " (dry run)" } else { "" }
+                        ));
+                    }
                     (serde_json::to_value(report)?, text)
                 }
                 Command::Prune {

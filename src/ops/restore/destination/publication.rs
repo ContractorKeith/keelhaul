@@ -12,10 +12,7 @@ pub(super) fn finish(
         Ok(()) => Ok(()),
         Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP) => match link() {
             Ok(()) => unlink().map_err(os),
-            Err(Errno::EXIST) => Err(Error::Refused(format!(
-                "restore conflict: {}",
-                name.to_string_lossy()
-            ))),
+            Err(Errno::EXIST) => Err(Error::Refused("restore conflict".into())),
             Err(e @ (Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP | Errno::PERM)) => {
                 Err(Error::Refused(format!(
                     "filesystem cannot safely publish {}: no-replace rename and hard links are unsupported ({e})",
@@ -24,10 +21,7 @@ pub(super) fn finish(
             }
             Err(e) => Err(os(e)),
         },
-        Err(Errno::EXIST) => Err(Error::Refused(format!(
-            "restore conflict: {}",
-            name.to_string_lossy()
-        ))),
+        Err(Errno::EXIST) => Err(Error::Refused("restore conflict".into())),
         Err(e) => Err(os(e)),
     }
 }

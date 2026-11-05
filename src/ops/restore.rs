@@ -27,6 +27,7 @@ impl Report {
     fn failure(&mut self, path: &Path, error: Error) {
         use base64::Engine;
         use std::os::unix::ffi::OsStrExt;
+        let path = Path::new("/").join(path);
         self.failed.push(Failure {
             path: path.to_string_lossy().into_owned(),
             path_b64: path

@@ -18,7 +18,7 @@ pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
             })?
         );
     } else {
-        println!("{damage}");
+        eprintln!("{damage}");
     }
     super::backup::completed_damage()?;
     Ok(())
@@ -41,10 +41,10 @@ pub(super) fn restore<B: crate::backend::Backend>(
     } else {
         println!("restored {} entries", report.restored);
         for damage in &report.damaged {
-            println!("{damage}");
+            eprintln!("{damage}");
         }
         for failure in &report.failed {
-            println!("{}: {}", failure.path, failure.error);
+            eprintln!("{}: {}", failure.path, failure.error);
         }
     }
     if !report.damaged.is_empty() {
