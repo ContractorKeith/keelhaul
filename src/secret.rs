@@ -26,8 +26,8 @@ pub enum Error {
     CommandOutputTooLarge,
     #[error("no secret source supplied and no TTY available")]
     NoTty,
-    #[error("password command failed")]
-    CommandFailed,
+    #[error("password command failed{0}")]
+    CommandFailed(String),
     #[error("password is not UTF-8")]
     InvalidUtf8,
     #[error("key file must contain exactly 32 bytes")]
@@ -150,7 +150,7 @@ pub fn new_key_file(path: &Path) -> Result<Secret, Error> {
 }
 
 // Read at most one byte beyond the limit, then kill and reap the command on
-// every early error. Stderr is discarded so it cannot leak the password.
+// every early error. Drain stderr concurrently, retaining only a bounded tail.
 fn command_password(command: &str) -> Result<Vec<u8>, Error> {
     const LIMIT: u64 = 1024 * 1024;
     let mut child = Command::new("sh")
@@ -158,8 +158,13 @@ fn command_password(command: &str) -> Result<Vec<u8>, Error> {
         .arg(command)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("password command stderr unavailable"))?;
+    let diagnostics = std::thread::spawn(move || stderr_tail(stderr));
     let result = (|| {
         let stdout = child
             .stdout
@@ -175,13 +180,49 @@ fn command_password(command: &str) -> Result<Vec<u8>, Error> {
     if result.is_err() {
         let _ = child.kill();
         let _ = child.wait();
+        let _ = diagnostics.join();
         return result;
     }
-    if !child.wait()?.success() {
-        return Err(Error::CommandFailed);
+    let status = child.wait();
+    let tail = diagnostics
+        .join()
+        .map_err(|_| io::Error::other("stderr reader panicked"))??;
+    if !status?.success() {
+        return Err(Error::CommandFailed(if tail.is_empty() {
+            String::new()
+        } else {
+            format!(": {tail}")
+        }));
     }
     result
 }
 
 #[cfg(test)]
 mod tests;
+
+fn stderr_tail(mut input: impl Read) -> io::Result<String> {
+    let mut tail = std::collections::VecDeque::with_capacity(2048);
+    let mut buffer = [0; 4096];
+    loop {
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        for byte in &buffer[..n] {
+            if tail.len() == 2048 {
+                tail.pop_front();
+            }
+            tail.push_back(*byte);
+        }
+    }
+    let bytes = tail.into_iter().collect::<Vec<_>>();
+    let text = String::from_utf8_lossy(&bytes);
+    let lines = text.lines().collect::<Vec<_>>();
+    let text = lines[lines.len().saturating_sub(10)..].join("\n");
+    // Lossy UTF-8 decoding can expand a truncated codepoint; retain the byte cap.
+    let mut start = text.len().saturating_sub(2048);
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    Ok(text[start..].to_owned())
+}

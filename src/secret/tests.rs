@@ -72,3 +72,18 @@ fn command_output_limit_is_inclusive() {
         Err(Error::CommandOutputTooLarge)
     ));
 }
+
+#[test]
+fn password_command_failure_retains_only_bounded_stderr_tail() {
+    let error =
+        command_password("i=0; while [ $i -lt 20 ]; do echo line-$i >&2; i=$((i+1)); done; exit 1")
+            .err()
+            .unwrap()
+            .to_string();
+    assert!(error.contains("line-19"));
+    assert!(!error.contains("line-9\n"));
+    assert!(error.contains("line-10\n"));
+    let tail = stderr_tail(&vec![b'x'; 10000][..]).unwrap();
+    assert_eq!(tail.len(), 2048);
+    assert!(command_password("head -c 100000 /dev/zero >&2; printf ok").is_ok());
+}
