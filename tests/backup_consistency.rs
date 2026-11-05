@@ -128,3 +128,52 @@ fn malformed_root_names_have_shared_damage_and_leave_good_roots_restorable() {
     assert_eq!(damaged, checked.damage);
     assert_eq!(fs::read(scratch.path().join("good")).unwrap(), b"good");
 }
+
+#[test]
+fn hardlink_writer_reads_each_inode_once() {
+    let scratch = tempfile::tempdir().unwrap();
+    let source = scratch.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("a"), b"first").unwrap();
+    fs::hard_link(source.join("a"), source.join("z")).unwrap();
+    let repo = repo();
+    let report = backup(&repo, &[source], vec![]).unwrap();
+    assert_eq!(report.summary.files_read, 1);
+    assert_eq!(report.summary.files_new, 2);
+}
+#[test]
+fn disagreeing_hardlinks_restore_independently_without_damage() {
+    use std::os::unix::fs::MetadataExt;
+    let repo = repo();
+    let mut store = BlobStore::load(&repo).unwrap();
+    let mut entries = Vec::new();
+    for (name, bytes) in [("a", b"aaa"), ("b", b"bbb"), ("c", b"aaa")] {
+        let id = store.add(BlobKind::Data, bytes).unwrap();
+        let mut e = entry(name, json!({"type":"file","size":3,"content":[id]}));
+        e["links"] = 3.into();
+        entries.push(e);
+    }
+    let child = tree(&mut store, entries);
+    let root = tree(
+        &mut store,
+        vec![entry("%2Fsource", json!({"type":"dir","subtree":child}))],
+    );
+    store.finish().unwrap();
+    let id = snapshot(&repo, root, vec!["/source"]);
+    assert!(check(&repo).unwrap().damage.is_empty());
+    assert!(verify(&repo, None).unwrap().damage.is_empty());
+    let scratch = tempfile::tempdir().unwrap();
+    let report = restore(&repo, &id, scratch.path(), &[]).unwrap();
+    assert!(report.damaged.is_empty(), "{report:?}");
+    assert!(report.failed.is_empty(), "{report:?}");
+    for (name, bytes) in [("a", b"aaa"), ("b", b"bbb"), ("c", b"aaa")] {
+        assert_eq!(
+            fs::read(scratch.path().join("source").join(name)).unwrap(),
+            bytes
+        );
+    }
+    assert_ne!(
+        fs::metadata(scratch.path().join("source/a")).unwrap().ino(),
+        fs::metadata(scratch.path().join("source/c")).unwrap().ino()
+    );
+}

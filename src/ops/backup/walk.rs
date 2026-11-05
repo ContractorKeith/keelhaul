@@ -24,6 +24,7 @@ pub(super) struct FileTask {
     pub key: (usize, PathBuf),
     pub entry: crate::format::tree::Entry,
     pub changed: bool,
+    pub reuse: bool,
     pub previous_content: Option<Vec<String>>,
 }
 pub(super) fn run(
@@ -147,7 +148,8 @@ pub(super) fn run(
                         && old.inode == entry.inode
                         && old.device == entry.device
                 });
-                if metadata_unchanged && !options.force_rehash && !options.heal {
+                if metadata_unchanged && entry.links <= 1 && !options.force_rehash && !options.heal
+                {
                     entry.node = old.expect("reuse requires a parent entry").node.clone();
                     send(
                         &events,
@@ -158,12 +160,17 @@ pub(super) fn run(
                         ),
                     )?;
                 } else {
+                    let reuse = metadata_unchanged && !options.force_rehash && !options.heal;
+                    if reuse {
+                        entry.node = old.expect("reuse requires a parent entry").node.clone();
+                    }
                     tasks
                         .send(FileTask {
                             path,
                             key: (root_index, key),
                             entry,
                             changed: old.is_some(),
+                            reuse,
                             previous_content: if metadata_unchanged {
                                 old.and_then(|entry| match &entry.node {
                                     Node::File { content, .. } => Some(content.clone()),

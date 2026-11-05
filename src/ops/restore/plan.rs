@@ -9,7 +9,7 @@ use crate::{
     repo::{Error, blobs::BlobStore, trees::TreeCache},
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     os::unix::ffi::OsStringExt,
     path::{Component, PathBuf},
@@ -219,5 +219,29 @@ pub(super) fn build<B: Backend>(
     }
     let mut items = planner.items;
     items.sort_by(|a, b| a.path.cmp(&b.path));
+    // Disable linking for the entire inconsistent group, including aliases seen first.
+    let mut groups = HashMap::new();
+    let mut independent = HashSet::new();
+    for item in &items {
+        if item.entry.links > 1
+            && let Node::File { size, content } = &item.entry.node
+        {
+            let key = (item.entry.device, item.entry.inode);
+            if let Some((first_size, first_content)) = groups.insert(key, (*size, content))
+                && (first_size != *size || first_content != content)
+            {
+                independent.insert(key);
+            }
+        }
+    }
+    for item in &mut items {
+        if independent.contains(&(item.entry.device, item.entry.inode)) {
+            eprintln!(
+                "warning: {}: inconsistent hardlink content; restoring independently",
+                item.path.display()
+            );
+            item.entry.links = 1;
+        }
+    }
     Ok(items)
 }

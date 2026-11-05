@@ -76,6 +76,7 @@ pub(super) fn run<B: Backend>(
             .cloned()
             .collect(),
     );
+    let hardlinks = files::Hardlinks::default();
     let keys = store.worker_keys();
     let gear = repo.chunker_key();
     thread::scope(|scope| {
@@ -108,10 +109,11 @@ pub(super) fn run<B: Backend>(
             let receiver = tasks_rx.clone();
             let events = events_tx.clone();
             let seen = &seen;
+            let hardlinks = &hardlinks;
             thread::Builder::new().spawn_scoped(scope, move || {
                 workers::run("file", events.clone(), move || {
                     while let Some(task) = workers::receive(&receiver, "file")? {
-                        files::read(task, &gear, &keys, seen, &events)?;
+                        files::read(task, &gear, &keys, seen, hardlinks, &events)?;
                     }
                     Ok(())
                 });

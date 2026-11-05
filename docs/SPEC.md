@@ -282,6 +282,8 @@ A tree blob's payload describes one directory:
   `size == 0` if and only if `content` is empty.
 - Hardlinks: on restore, regular files with `links > 1` and equal `(device, inode)`
   within one snapshot are restored as hardlinks to the first one restored.
+  Writers give every entry of a link group the same content, size and metadata from
+  one read. Readers that find disagreeing entries restore each from its own content.
 - `xattrs` is reserved for a later version; v1 writers never write it.
 - Sockets, FIFOs and device files are not stored.
 
