@@ -167,6 +167,7 @@ fn restore_with_hook<B: Backend>(
         report.failure(&path, error);
     }
     destination.finish()?;
+    report.damaged.extend(store.damage);
     report.damaged.sort_by(|a, b| {
         (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
     });

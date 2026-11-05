@@ -72,6 +72,7 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
     let mut v = c.clone();
     v.insert(signature(name, "pack", "hash-mismatch"));
     run(f, seed, "header flip/truncate", c, v);
+    assert_all_restored(f, seed);
     f.reset();
     let name = &f.trailer;
     let mut bytes = f.bytes(name);
@@ -92,6 +93,7 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
             signature(name, "pack", "hash-mismatch"),
         ]),
     );
+    assert_all_restored(f, seed);
     for name in [&f.index, &f.snapshot] {
         f.reset();
         let mut bytes = f.bytes(name);
@@ -275,4 +277,24 @@ pub fn delete_indexed_pack(f: &Fixture, seed: u64, name: &str) {
             .map(|file| signature(&file.path, "file", "dangling-reference")),
     );
     run(f, seed, "delete indexed pack", c, v);
+}
+
+fn assert_all_restored(f: &Fixture, seed: u64) {
+    for (id, _) in f.repo.snapshots().unwrap() {
+        let target = tempfile::tempdir().unwrap();
+        let report = keelhaul::ops::restore::restore(&f.repo, &id, target.path(), &[]).unwrap();
+        assert!(report.failed.is_empty(), "seed {seed}: {report:?}");
+        for file in f
+            .files
+            .iter()
+            .filter(|f| f.path.starts_with(&format!("snapshots/{id}:")))
+        {
+            let path = file.path.split_once(':').unwrap().1;
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                std::fs::read(target.path().join(path.trim_start_matches('/'))).unwrap(),
+                "seed {seed}: {path}"
+            );
+        }
+    }
 }
