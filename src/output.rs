@@ -1,5 +1,25 @@
 use serde::Serialize;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// One command-wide context also covers warnings from backend/backup workers.
+static QUIET: AtomicBool = AtomicBool::new(false);
+static JSON: AtomicBool = AtomicBool::new(false);
+pub fn configure(quiet: bool, json: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+    JSON.store(json, Ordering::Relaxed);
+}
+fn informational() -> bool {
+    !QUIET.load(Ordering::Relaxed) || JSON.load(Ordering::Relaxed)
+}
+pub fn warning(args: std::fmt::Arguments<'_>) {
+    if informational() {
+        eprintln!("{args}");
+    }
+}
+pub fn damage(value: &impl std::fmt::Display) {
+    eprintln!("{value}");
+}
 
 #[derive(Serialize)]
 struct Version<'a> {
@@ -23,7 +43,11 @@ pub fn stdout() -> impl Write {
 struct StdoutWriter(io::Stdout);
 impl Write for StdoutWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.write(bytes).map_err(mark)
+        if informational() {
+            self.0.write(bytes).map_err(mark)
+        } else {
+            Ok(bytes.len())
+        }
     }
     fn flush(&mut self) -> io::Result<()> {
         self.0.flush().map_err(mark)

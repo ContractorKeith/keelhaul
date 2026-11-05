@@ -116,14 +116,11 @@ impl<B: Backend> Repository<B> {
                     envelope::open(&key.subkeys().encryption, Label::Config, bytes).is_ok()
                 }) {
                     if slot::verify_check(&slot, &key.subkeys().key_slot_check).is_err() {
-                        eprintln!(
-                            "warning: {}",
-                            damage(
-                                entry.name.as_str(),
-                                "hash-mismatch",
-                                "key slot check differs"
-                            )
-                        );
+                        crate::output::damage(&damage(
+                            entry.name.as_str(),
+                            "hash-mismatch",
+                            "key slot check differs",
+                        ));
                     }
                     return Ok(key);
                 }

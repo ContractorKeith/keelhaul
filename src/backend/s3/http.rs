@@ -105,8 +105,8 @@ impl S3Backend {
             };
             if retry && attempt + 1 < retry::ATTEMPTS && self.verbose {
                 match &result {
-                    Err(e) => eprintln!("{}; retrying", retry::cause(e)),
-                    Ok(r) => eprintln!("S3 HTTP {}; retrying", r.status),
+                    Err(e) => crate::warning!("{}; retrying", retry::cause(e)),
+                    Ok(r) => crate::warning!("S3 HTTP {}; retrying", r.status),
                 }
             }
             let retry_after = result.as_ref().ok().and_then(|r| r.retry_after);

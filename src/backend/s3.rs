@@ -84,7 +84,7 @@ impl S3Backend {
             status => return Err(error(&format!("S3 conditional-write probe HTTP {status}"))),
         };
         if self.verbose {
-            eprintln!(
+            crate::warning!(
                 "S3 create-once: {}",
                 if supported {
                     "If-None-Match: *"

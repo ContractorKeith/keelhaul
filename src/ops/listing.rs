@@ -41,7 +41,7 @@ pub fn ls_for_host<B: Backend>(
 ) -> Result<Vec<Listed>, Error> {
     let report = ls_report_for_host(repo, selector, filter, host)?;
     for damage in &report.damage {
-        eprintln!("warning: {damage}");
+        crate::output::damage(damage);
     }
     Ok(report.entries)
 }

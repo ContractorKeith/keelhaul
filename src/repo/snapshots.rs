@@ -30,7 +30,7 @@ impl<B: Backend> Repository<B> {
             match self.read_snapshot(&candidate.name) {
                 Ok(snapshot) => result.entries.push(snapshot),
                 Err(e @ Error::Damage { .. }) => {
-                    eprintln!("warning: {e}");
+                    crate::output::damage(&e);
                     result.damage.push(crate::damage::Damage::from_error(e)?);
                     result.damaged = true;
                 }

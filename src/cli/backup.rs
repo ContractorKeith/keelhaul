@@ -55,7 +55,7 @@ pub(super) fn run<B: Backend>(
                 );
             }
             if report.incomplete {
-                eprintln!(
+                crate::warning!(
                     "snapshot written; {} entries skipped",
                     report.skipped.iter().filter(|entry| entry.required).count()
                 );

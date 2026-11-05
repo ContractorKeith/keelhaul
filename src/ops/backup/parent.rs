@@ -35,7 +35,7 @@ pub(super) fn load<B: Backend>(
     match read(store, &snapshot.tree) {
         Ok(previous) => Ok((Some(id), previous)),
         Err(error) => {
-            eprintln!("warning: parent {id} unavailable; reading all files: {error}");
+            crate::warning!("warning: parent {id} unavailable; reading all files: {error}");
             Ok((None, HashMap::new()))
         }
     }

@@ -47,7 +47,7 @@ impl<'a, B: Backend> BlobStore<'a, B> {
     pub fn load(repo: &'a Repository<B>) -> Result<Self, Error> {
         let store = Self::load_quiet(repo)?;
         for item in &store.damage {
-            eprintln!("warning: {item}");
+            crate::output::damage(item);
         }
         Ok(store)
     }

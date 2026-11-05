@@ -236,7 +236,7 @@ pub(super) fn build<B: Backend>(
     }
     for item in &mut items {
         if independent.contains(&(item.entry.device, item.entry.inode)) {
-            eprintln!(
+            crate::warning!(
                 "warning: {}: inconsistent hardlink content; restoring independently",
                 item.path.display()
             );

@@ -78,7 +78,7 @@ impl Default for Options {
 }
 fn skipped(path: &Path, reason: impl ToString) -> Skipped {
     let reason = reason.to_string();
-    eprintln!("warning: {}: {reason}", path.display());
+    crate::warning!("warning: {}: {reason}", path.display());
     Skipped {
         required: true,
         path: path.to_string_lossy().into_owned(),
@@ -159,7 +159,7 @@ fn backup_locked<B: Backend>(
             }
         };
         if meta.is_symlink() {
-            eprintln!(
+            crate::warning!(
                 "warning: {} is a symlink; storing the link only (add a trailing / to back up what it points to)",
                 normalized.display()
             );
@@ -181,7 +181,7 @@ fn backup_locked<B: Backend>(
             .iter()
             .find(|(parent, _)| root.0.starts_with(parent))
         {
-            eprintln!(
+            crate::warning!(
                 "warning: {} is inside {}; backing it up once",
                 root.0.display(),
                 parent.display()

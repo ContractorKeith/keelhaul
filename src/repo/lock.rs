@@ -147,7 +147,7 @@ impl<'a, B: Backend> Guard<'a, B> {
                     Err(mpsc::RecvTimeoutError::Timeout)
                 ) {
                     if let Err(error) = self.refresh() {
-                        eprintln!("warning: lock refresh failed: {error}");
+                        crate::warning!("warning: lock refresh failed: {error}");
                     }
                 }
             });
@@ -172,7 +172,7 @@ where
         {
             for name in std::iter::once(&held.name).chain(&held.retired) {
                 if let Err(error) = self.backend.delete(name) {
-                    eprintln!("warning: cannot release lock {name}: {error}");
+                    crate::warning!("warning: cannot release lock {name}: {error}");
                 }
             }
         }

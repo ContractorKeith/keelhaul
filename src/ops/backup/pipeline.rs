@@ -166,7 +166,7 @@ pub(super) fn run<B: Backend>(
                 Event::Read => files_read += 1,
                 Event::ChangedDuringRead(path) => {
                     files_changed_during_read += 1;
-                    eprintln!(
+                    crate::warning!(
                         "warning: {}: changed while reading; stored as read",
                         path.display()
                     );

@@ -2,6 +2,7 @@ use super::{Cli, Command, KeyCommand};
 use crate::output;
 
 pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+    output::configure(cli.quiet, cli.json);
     if cli.no_lock {
         if !matches!(
             cli.command,
@@ -16,7 +17,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
             )
             .into());
         }
-        eprintln!("warning: --no-lock skips repository locking; exclude concurrent writers");
+        crate::warning!("warning: --no-lock skips repository locking; exclude concurrent writers");
     }
     super::secrets::resolve(&mut cli);
     match cli.command {
@@ -76,7 +77,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         println!("{}", serde_json::to_string(&report)?);
                     } else {
                         for damage in &report.damage {
-                            println!("{damage}");
+                            output::damage(damage);
                         }
                         for note in &report.notes {
                             println!("{}: {}", note.object.escape_debug(), note.problem);
@@ -156,7 +157,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                     } else {
                         println!("{text}");
                         for damage in &summary.damage {
-                            eprintln!("{damage}");
+                            output::damage(damage);
                         }
                     }
                     if !summary.damage.is_empty() {

@@ -18,7 +18,7 @@ pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
             })?
         );
     } else {
-        eprintln!("{damage}");
+        crate::output::damage(&damage);
     }
     super::backup::completed_damage()?;
     Ok(())
@@ -50,10 +50,10 @@ pub(super) fn restore<B: crate::backend::Backend>(
             report.restored, report.snapshot
         );
         for damage in &report.damaged {
-            eprintln!("{damage}");
+            crate::output::damage(&damage);
         }
         for failure in &report.failed {
-            eprintln!("{}: {}", failure.path, failure.error);
+            crate::warning!("{}: {}", failure.path, failure.error);
         }
     }
     if !report.damaged.is_empty() {
@@ -87,7 +87,7 @@ pub(super) fn listing<B: crate::backend::Backend>(
         }
     } else {
         if selector == "latest" && !report.damage.is_empty() {
-            eprintln!("using snapshot {}", report.snapshot);
+            crate::warning!("using snapshot {}", report.snapshot);
         }
         for entry in &report.entries {
             println!(
@@ -102,7 +102,7 @@ pub(super) fn listing<B: crate::backend::Backend>(
         }
     }
     for damage in &report.damage {
-        eprintln!("{damage}");
+        crate::output::damage(&damage);
     }
     if !report.damage.is_empty() {
         super::backup::completed_damage()?;
