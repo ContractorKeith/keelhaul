@@ -29,6 +29,17 @@ fn foreign_secret_names_the_slot_that_does_not_authenticate_config() {
     repo.backend
         .plant_raw(name.as_str(), &foreign.backend.read(&name).unwrap())
         .unwrap();
+    for error in [
+        keelhaul::ops::check::check_backend(&repo.backend, &foreign_secret).unwrap_err(),
+        keelhaul::ops::verify::verify_backend(&repo.backend, &foreign_secret, None).unwrap_err(),
+    ] {
+        assert!(
+            error.to_string().contains(&format!(
+                "key slot {name} opened with this secret belongs to another repository"
+            )),
+            "{error}"
+        );
+    }
     let error = Repository::open(repo.backend, &foreign_secret)
         .err()
         .unwrap();

@@ -84,7 +84,7 @@ impl<B: Backend> Repository<B> {
                     "bad-format"
                 };
                 if let Some(slot) = &opened_slot {
-                    damage(slot, problem, &format!("key slot {slot} opened with this secret belongs to another repository; config authentication failed"))
+                    foreign_slot(slot)
                 } else {
                     damage("config", problem, &e.to_string())
                 }
@@ -99,7 +99,11 @@ impl<B: Backend> Repository<B> {
 
     /// Unlock independently of config so audits can collect config damage too.
     pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
-        Self::unlock_with_slot(backend, secret).map(|(master, _)| master)
+        let (master, opened_slot) = Self::unlock_with_slot(backend, secret)?;
+        if let Some(slot) = opened_slot {
+            return Err(foreign_slot(&slot));
+        }
+        Ok(master)
     }
     fn unlock_with_slot(
         backend: &B,
@@ -233,6 +237,16 @@ impl<B: Backend> Repository<B> {
             .delete(&ObjectName::new(&format!("keys/{id}"))?)?;
         Ok(())
     }
+}
+
+fn foreign_slot(slot: &str) -> Error {
+    damage(
+        slot,
+        "undecryptable",
+        &format!(
+            "key slot {slot} opened with this secret belongs to another repository; config authentication failed"
+        ),
+    )
 }
 
 pub(super) fn damage(object: &str, problem: &'static str, detail: &str) -> Error {
