@@ -1,10 +1,9 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
-use std::io;
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
-        Command::Version => output::version(io::stdout().lock(), cli.json)?,
+        Command::Version => output::version(output::stdout(), cli.json)?,
         command => {
             use crate::{repo::Repository, secret};
             let path = cli
@@ -116,7 +115,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     let repo = Repository::open(backend, &secret)?;
                     match command {
                         KeyCommand::List => {
-                            crate::ops::key::render_list(io::stdout().lock(), &repo, cli.json)?;
+                            crate::ops::key::render_list(output::stdout(), &repo, cli.json)?;
                             return Ok(());
                         }
                         KeyCommand::Add {

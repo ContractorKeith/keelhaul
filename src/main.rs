@@ -21,16 +21,20 @@ fn main() -> ExitCode {
                 let json = std::env::args_os().any(|arg| arg == "--json");
                 exit::report(&error.to_string(), Failure::Usage, json);
             } else {
-                let _ = error.print();
+                let _ = keelhaul::output::line(format_args!("{}", error.to_string().trim_end()));
             }
             return ExitCode::from(exit::code(result));
         }
     };
     let json = cli.json;
-    let result = cli::run(cli).map_err(|error| {
-        let failure = exit::failure(error.as_ref());
-        exit::report(&format!("{error:#}"), failure, json);
-        failure
-    });
+    let result = match cli::run(cli) {
+        Ok(()) => Ok(()),
+        Err(error) if keelhaul::output::broken_pipe(error.as_ref()) => Ok(()),
+        Err(error) => {
+            let failure = exit::failure(error.as_ref());
+            exit::report(&format!("{error:#}"), failure, json);
+            Err(failure)
+        }
+    };
     ExitCode::from(exit::code(result))
 }

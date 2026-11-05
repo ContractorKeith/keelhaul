@@ -55,7 +55,6 @@ pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
 
 /// Keep stderr diagnostics and JSON failures consistent across command paths.
 pub fn report(message: &str, failure: Failure, json: bool) {
-    use std::io::Write;
     eprintln!("keelhaul: {message}");
     if json {
         #[derive(serde::Serialize)]
@@ -67,16 +66,16 @@ pub fn report(message: &str, failure: Failure, json: bool) {
         struct Report<'a> {
             error: Detail<'a>,
         }
-        let mut out = std::io::stdout().lock();
         let report = Report {
             error: Detail {
                 message,
                 exit: code(Err(failure)),
             },
         };
-        if let Err(error) = serde_json::to_writer(&mut out, &report)
+        if let Err(error) = serde_json::to_string(&report)
             .map_err(std::io::Error::other)
-            .and_then(|()| writeln!(out))
+            .and_then(|text| crate::output::line(format_args!("{text}")))
+            && error.kind() != std::io::ErrorKind::BrokenPipe
         {
             eprintln!("keelhaul: cannot write JSON error: {error}");
         }
