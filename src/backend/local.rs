@@ -1,4 +1,4 @@
-use super::local_fs::{TempFile, at, ensure_directory, lock_result};
+use super::local_fs::{TempFile, at, ensure_directory, lock_directory, lock_result};
 use super::local_scan;
 use super::{Backend, BackendError, Entry, ForeignEntry, Kind, ObjectName, foreign, object_error};
 use std::{
@@ -10,6 +10,7 @@ use std::{
 #[derive(Debug)]
 pub struct LocalBackend {
     root: PathBuf,
+    lock_timeout: std::time::Duration,
 }
 
 impl LocalBackend {
@@ -17,6 +18,7 @@ impl LocalBackend {
         ensure_directory(root.as_ref(), root.as_ref())?;
         Ok(Self {
             root: root.as_ref().to_path_buf(),
+            lock_timeout: std::time::Duration::from_secs(30),
         })
     }
 
@@ -24,6 +26,7 @@ impl LocalBackend {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, BackendError> {
         let backend = Self {
             root: root.as_ref().to_path_buf(),
+            lock_timeout: std::time::Duration::from_secs(30),
         };
         let config = ObjectName::new("config")?;
         let metadata =
@@ -68,9 +71,25 @@ impl LocalBackend {
             .expect("validated object has a parent directory");
         ensure_directory(parent, &self.root)?;
         let directory = File::open(parent).map_err(|e| at(parent, e))?;
-        lock_result(directory.lock()).map_err(|e| at(parent, e))?;
+        let mut nonce = [0; 8];
+        getrandom::fill(&mut nonce).map_err(io::Error::other)?;
+        let mut temp = path.as_os_str().to_os_string();
+        temp.push(format!(".tmp-{}", hex::encode(nonce)));
+        let temp = PathBuf::from(temp);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|e| at(&temp, e))?;
+        let temp = TempFile(temp);
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|e| at(&temp.0, e))?;
+        lock_directory(&directory, parent, self.lock_timeout)?;
         match fs::metadata(path) {
             Ok(metadata) => {
+                // Comparing an idempotent retry can read a whole pack; do it unlocked.
+                lock_result(directory.unlock()).map_err(|e| at(parent, e))?;
                 if metadata.len() != bytes.len() as u64 {
                     return Err(BackendError::AlreadyExists(name.clone()));
                 }
@@ -87,26 +106,19 @@ impl LocalBackend {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let mut nonce = [0; 8];
-        getrandom::fill(&mut nonce).map_err(io::Error::other)?;
-        let mut temp = path.as_os_str().to_os_string();
-        temp.push(format!(".tmp-{}", hex::encode(nonce)));
-        let temp = PathBuf::from(temp);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|e| at(&temp, e))?;
-        let temp = TempFile(temp);
-        file.write_all(bytes)
-            .and_then(|()| file.sync_all())
-            .map_err(|e| at(&temp.0, e))?;
         fs::rename(&temp.0, path)?;
         directory.sync_all()?;
         Ok(())
     }
 
     fn delete_path(&self, path: &Path) -> Result<(), BackendError> {
+        // Failed publication may clean up an object that never existed. Avoid a
+        // second directory-lock deadline when there is nothing to delete.
+        match fs::symlink_metadata(path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(at(path, error)),
+        }
         let parent = path
             .parent()
             .expect("validated path has a parent directory");
@@ -115,7 +127,7 @@ impl LocalBackend {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(error) => return Err(at(parent, error)),
         };
-        lock_result(directory.lock()).map_err(|e| at(parent, e))?;
+        lock_directory(&directory, parent, self.lock_timeout)?;
         match fs::remove_file(path) {
             Ok(()) => directory.sync_all().map_err(|e| at(parent, e)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -196,5 +208,43 @@ impl Backend for LocalBackend {
         let path = self.path(name);
         self.delete_path(&path)
             .map_err(|e| e.context(Some(name), Some(&path)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn busy_directory_bounds_write_and_delete_then_recovers() {
+        let scratch = tempfile::tempdir().unwrap();
+        let mut backend = LocalBackend::new(scratch.path()).unwrap();
+        backend.lock_timeout = Duration::from_millis(75);
+        let name = ObjectName::new(&format!("data/aa/{}", "a".repeat(64))).unwrap();
+        backend.write(&name, b"original").unwrap();
+        let shard = scratch.path().join("data/aa");
+        let held = File::open(&shard).unwrap();
+        held.lock().unwrap();
+        let absent = ObjectName::new(&format!("data/aa/aa{}", "b".repeat(62))).unwrap();
+        backend.delete(&absent).unwrap();
+        for result in [
+            {
+                let start = Instant::now();
+                let result = backend.write(&name, b"original");
+                assert!(start.elapsed() < Duration::from_secs(2));
+                result
+            },
+            backend.delete(&name),
+        ] {
+            let message = result.unwrap_err().to_string();
+            assert!(message.contains("repository directory busy"), "{message}");
+            assert!(message.contains(shard.to_str().unwrap()));
+        }
+        drop(held);
+        backend.write(&name, b"original").unwrap();
+        backend.delete(&name).unwrap();
+        backend.write(&name, b"new").unwrap();
+        assert_eq!(backend.read(&name).unwrap(), b"new");
     }
 }

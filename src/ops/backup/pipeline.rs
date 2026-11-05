@@ -34,6 +34,7 @@ pub(super) enum Event {
     Ignored((usize, PathBuf)),
     Warning(PathBuf, String),
     Read,
+    ChangedDuringRead(PathBuf),
     Finished(bool),
 }
 pub(super) fn closed() -> Error {
@@ -48,8 +49,14 @@ pub(super) struct Output {
     pub paths: Vec<String>,
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
+    pub blobs_healed: u64,
     pub files_read: u64,
+    pub files_changed_during_read: u64,
 }
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pipeline coordinates repository, fencing, source walk and worker options"
+)]
 pub(super) fn run<B: Backend>(
     repo: &Repository<B>,
     mut store: BlobStore<'_, B>,
@@ -58,13 +65,14 @@ pub(super) fn run<B: Backend>(
     previous: Previous,
     patterns: &Patterns,
     options: &Options,
+    lock: &crate::repo::lock::Guard<'_, B>,
 ) -> Result<Output, Error> {
     let jobs = options.jobs;
     let seen = Mutex::new(
         store
             .index
             .keys()
-            .filter(|id| !store.suspect.contains(*id))
+            .filter(|id| !options.heal && !store.suspect.contains(*id))
             .cloned()
             .collect(),
     );
@@ -87,7 +95,10 @@ pub(super) fn run<B: Backend>(
             thread::Builder::new().spawn_scoped(scope, move || {
                 workers::run("upload", errors, move || {
                     while let Some(task) = workers::receive(&receiver, "upload")? {
-                        if done.send(workers::upload(repo, &task)).is_err() {
+                        let result = lock
+                            .self_check()
+                            .and_then(|()| workers::upload(repo, &task).map_err(Error::from));
+                        if done.send(result).is_err() {
                             break;
                         }
                     }
@@ -127,8 +138,11 @@ pub(super) fn run<B: Backend>(
         // An early return drops the receivers and store's upload sender, which
         // releases every blocked send before the scope joins its threads.
         let mut summary = Summary::default();
+        let mut healing = Default::default();
+        let mut blobs_healed = 0;
         let mut skipped = Vec::new();
         let mut files_read = 0;
+        let mut files_changed_during_read = 0;
         let mut trees = Trees::new(roots);
         let mut unfinished = jobs + 1;
         while unfinished > 0 {
@@ -137,8 +151,21 @@ pub(super) fn run<B: Backend>(
                 Event::Finished(true) => {
                     return Err(Error::Refused("upload pool stopped early".into()));
                 }
-                Event::Blob(blob) => store.add_sealed(blob)?,
+                Event::Blob(blob) => {
+                    if options.heal {
+                        blobs_healed += u64::from(store.add_healing(blob, &mut healing)?);
+                    } else {
+                        store.add_sealed(blob)?;
+                    }
+                }
                 Event::Read => files_read += 1,
+                Event::ChangedDuringRead(path) => {
+                    files_changed_during_read += 1;
+                    eprintln!(
+                        "warning: {}: changed while reading; stored as read",
+                        path.display()
+                    );
+                }
                 Event::Directory(key, entry, count) => {
                     summary.dirs += 1;
                     trees.directory(key, *entry, count, &mut store)?;
@@ -186,7 +213,9 @@ pub(super) fn run<B: Backend>(
             paths,
             summary,
             skipped,
+            blobs_healed,
             files_read,
+            files_changed_during_read,
         })
     })
 }

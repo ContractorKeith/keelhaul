@@ -44,7 +44,8 @@ pub struct Cli {
     quiet: bool,
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
-    /// Workers (1–256). Memory: jobs × (8 MiB + 2 × pack_target), plus index and tree metadata.
+    /// Workers (1–256). File descriptors: about 2 per job plus repository/SSH overhead; lower jobs or raise ulimit -n if exhausted.
+    /// Memory: jobs × (8 MiB + 2 × pack_target), plus index and tree metadata.
     #[arg(long, default_value_t = 4, global = true, value_parser = clap::value_parser!(u32).range(1..=256))]
     jobs: u32,
     #[command(subcommand)]
@@ -70,6 +71,9 @@ pub(super) enum Command {
         parent: Option<String>,
         #[arg(long)]
         force_rehash: bool,
+        /// Verify stored chunks before deduplicating and replace damaged copies; implies --force-rehash.
+        #[arg(long)]
+        heal: bool,
         #[arg(long)]
         exclude: Vec<String>,
         #[arg(long)]

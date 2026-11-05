@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased fixes
+
+- Stop queued backup uploads when the repository lock disappears or refresh fails.
+
+- Add `backup --heal` to verify indexed chunks and replace damaged copies before prune.
+
+- Abort backups on descriptor or memory exhaustion, with a jobs/ulimit hint.
+
+- Preserve files that change during reads and report their count in backup JSON.
+
+- Bound local directory lock waits and write/fsync temporary objects before locking.
+
 ## 0.1.0 — unreleased
 
 - M0: local and in-memory storage backends, conformance harness, JSON output and

@@ -10,7 +10,11 @@ use crate::{
 };
 pub use payload::{Clock, Lock, STALE, SystemClock};
 use std::{
-    sync::{Mutex, mpsc},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -24,6 +28,7 @@ pub struct Guard<'a, B: Backend> {
     keys: Subkeys,
     clock: &'a dyn Clock,
     held: Mutex<Held>,
+    refresh_failed: AtomicBool,
 }
 impl<'a, B: Backend> Guard<'a, B> {
     pub fn acquire(
@@ -47,6 +52,7 @@ impl<'a, B: Backend> Guard<'a, B> {
             backend,
             keys,
             clock,
+            refresh_failed: AtomicBool::new(false),
             held: Mutex::new(Held {
                 name,
                 payload,
@@ -75,6 +81,11 @@ impl<'a, B: Backend> Guard<'a, B> {
         Ok((guard, damage))
     }
     pub fn self_check(&self) -> Result<(), Error> {
+        if self.refresh_failed.load(Ordering::Acquire) {
+            return Err(Error::Locked(
+                "lock refresh failed; operation aborted".into(),
+            ));
+        }
         let held = self.held.lock().map_err(poison)?;
         if held.payload.age(self.clock.now())? > STALE
             || !self
@@ -91,6 +102,13 @@ impl<'a, B: Backend> Guard<'a, B> {
         Ok(())
     }
     pub fn refresh(&self) -> Result<(), Error> {
+        let result = self.refresh_inner();
+        if result.is_err() {
+            self.refresh_failed.store(true, Ordering::Release);
+        }
+        result
+    }
+    fn refresh_inner(&self) -> Result<(), Error> {
         let mut held = self.held.lock().map_err(poison)?;
         // A stalled process must not resurrect a lock after another operation ignored it.
         if held.payload.age(self.clock.now())? > STALE

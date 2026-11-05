@@ -4,6 +4,11 @@ mod parent;
 mod pipeline;
 mod publication;
 #[cfg(test)]
+#[path = "backup/read_tests.rs"]
+mod read_tests;
+#[path = "backup/resources.rs"]
+mod resources;
+#[cfg(test)]
 mod tests;
 mod trees;
 mod walk;
@@ -33,7 +38,9 @@ pub struct Report {
 pub struct ReportSummary {
     #[serde(flatten)]
     pub totals: Summary,
+    pub blobs_healed: u64,
     pub files_read: u64,
+    pub files_changed_during_read: u64,
 }
 impl std::ops::Deref for ReportSummary {
     type Target = Summary;
@@ -44,6 +51,7 @@ impl std::ops::Deref for ReportSummary {
 pub struct Options {
     pub parent: Option<String>,
     pub force_rehash: bool,
+    pub heal: bool,
     pub excludes: Vec<String>,
     pub one_file_system: bool,
     pub host: Option<String>,
@@ -54,6 +62,7 @@ impl Default for Options {
         Self {
             parent: None,
             force_rehash: false,
+            heal: false,
             excludes: Vec::new(),
             one_file_system: false,
             host: None,
@@ -116,6 +125,7 @@ fn backup_locked<B: Backend>(
     if paths.is_empty() {
         return Err(Error::Refused("backup needs at least one path".into()));
     }
+    resources::jobs(options.jobs)?;
     let patterns = Patterns::new(&options.excludes)?;
     let mut failures = Vec::new();
     let mut roots = Vec::new();
@@ -123,6 +133,7 @@ fn backup_locked<B: Backend>(
         let normalized = match absolute(input) {
             Ok(path) => path,
             Err(error) => {
+                resources::check(input, &error)?;
                 failures.push(skipped(input, error));
                 continue;
             }
@@ -130,6 +141,7 @@ fn backup_locked<B: Backend>(
         let meta = match std::fs::symlink_metadata(input) {
             Ok(meta) => meta,
             Err(error) => {
+                resources::check(input, &error)?;
                 failures.push(skipped(input, error));
                 continue;
             }
@@ -162,7 +174,9 @@ fn backup_locked<B: Backend>(
     let host = options.host.clone().unwrap_or_else(crate::host::hostname);
     let mut store = BlobStore::load(repo)?;
     let (parent, previous) = parent::load(repo, &mut store, &host, &strings, options)?;
-    let result = pipeline::run(repo, store, &roots, &strings, previous, &patterns, options)?;
+    let result = pipeline::run(
+        repo, store, &roots, &strings, previous, &patterns, options, lock,
+    )?;
     let mut summary = result.summary;
     summary.files_skipped += failures.len() as u64;
     failures.extend(result.skipped);
@@ -190,7 +204,9 @@ fn backup_locked<B: Backend>(
         snapshot: id,
         summary: ReportSummary {
             totals: summary,
+            blobs_healed: result.blobs_healed,
             files_read: result.files_read,
+            files_changed_during_read: result.files_changed_during_read,
         },
         skipped: failures,
     })
