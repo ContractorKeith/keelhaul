@@ -32,7 +32,7 @@ fn main() -> ExitCode {
         Err(error) if keelhaul::output::broken_pipe(error.as_ref()) => Ok(()),
         Err(error) => {
             let failure = exit::failure(error.as_ref());
-            exit::report(&format!("{error:#}"), failure, json);
+            exit::report(&error.to_string(), failure, json);
             Err(failure)
         }
     };
