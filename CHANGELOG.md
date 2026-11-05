@@ -2,6 +2,8 @@
 
 ## Unreleased fixes
 
+- Add `backup --heal` to verify indexed chunks and replace damaged copies before prune.
+
 - Abort backups on descriptor or memory exhaustion, with a jobs/ulimit hint.
 
 - Preserve files that change during reads and report their count in backup JSON.

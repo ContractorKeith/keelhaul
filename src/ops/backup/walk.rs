@@ -147,7 +147,7 @@ pub(super) fn run(
                         && old.inode == entry.inode
                         && old.device == entry.device
                 });
-                if metadata_unchanged && !options.force_rehash {
+                if metadata_unchanged && !options.force_rehash && !options.heal {
                     entry.node = old.expect("reuse requires a parent entry").node.clone();
                     send(
                         &events,

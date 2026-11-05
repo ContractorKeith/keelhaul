@@ -49,6 +49,7 @@ pub(super) struct Output {
     pub paths: Vec<String>,
     pub summary: Summary,
     pub skipped: Vec<Skipped>,
+    pub blobs_healed: u64,
     pub files_read: u64,
     pub files_changed_during_read: u64,
 }
@@ -66,7 +67,7 @@ pub(super) fn run<B: Backend>(
         store
             .index
             .keys()
-            .filter(|id| !store.suspect.contains(*id))
+            .filter(|id| !options.heal && !store.suspect.contains(*id))
             .cloned()
             .collect(),
     );
@@ -129,6 +130,8 @@ pub(super) fn run<B: Backend>(
         // An early return drops the receivers and store's upload sender, which
         // releases every blocked send before the scope joins its threads.
         let mut summary = Summary::default();
+        let mut healing = Default::default();
+        let mut blobs_healed = 0;
         let mut skipped = Vec::new();
         let mut files_read = 0;
         let mut files_changed_during_read = 0;
@@ -140,7 +143,13 @@ pub(super) fn run<B: Backend>(
                 Event::Finished(true) => {
                     return Err(Error::Refused("upload pool stopped early".into()));
                 }
-                Event::Blob(blob) => store.add_sealed(blob)?,
+                Event::Blob(blob) => {
+                    if options.heal {
+                        blobs_healed += u64::from(store.add_healing(blob, &mut healing)?);
+                    } else {
+                        store.add_sealed(blob)?;
+                    }
+                }
                 Event::Read => files_read += 1,
                 Event::ChangedDuringRead(path) => {
                     files_changed_during_read += 1;
@@ -196,6 +205,7 @@ pub(super) fn run<B: Backend>(
             paths,
             summary,
             skipped,
+            blobs_healed,
             files_read,
             files_changed_during_read,
         })

@@ -71,6 +71,9 @@ pub(super) enum Command {
         parent: Option<String>,
         #[arg(long)]
         force_rehash: bool,
+        /// Verify stored chunks before deduplicating and replace damaged copies; implies --force-rehash.
+        #[arg(long)]
+        heal: bool,
         #[arg(long)]
         exclude: Vec<String>,
         #[arg(long)]

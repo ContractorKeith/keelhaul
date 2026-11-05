@@ -38,6 +38,7 @@ pub struct Report {
 pub struct ReportSummary {
     #[serde(flatten)]
     pub totals: Summary,
+    pub blobs_healed: u64,
     pub files_read: u64,
     pub files_changed_during_read: u64,
 }
@@ -50,6 +51,7 @@ impl std::ops::Deref for ReportSummary {
 pub struct Options {
     pub parent: Option<String>,
     pub force_rehash: bool,
+    pub heal: bool,
     pub excludes: Vec<String>,
     pub one_file_system: bool,
     pub host: Option<String>,
@@ -60,6 +62,7 @@ impl Default for Options {
         Self {
             parent: None,
             force_rehash: false,
+            heal: false,
             excludes: Vec::new(),
             one_file_system: false,
             host: None,
@@ -199,6 +202,7 @@ fn backup_locked<B: Backend>(
         snapshot: id,
         summary: ReportSummary {
             totals: summary,
+            blobs_healed: result.blobs_healed,
             files_read: result.files_read,
             files_changed_during_read: result.files_changed_during_read,
         },

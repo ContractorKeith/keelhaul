@@ -162,6 +162,11 @@ does not establish that it is safe to interrupt another machine's backup.
 
 ## How to verify a backup
 
+If `verify` reports data damage, run `keelhaul backup --heal <same paths>` then
+`prune`. Healing re-reads the source files, verifies stored chunks before
+deduplicating, and stores fresh copies of damaged chunks; prune can then discard
+the damaged copies.
+
 ```sh
 keelhaul check
 keelhaul verify
