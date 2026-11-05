@@ -24,7 +24,7 @@ fn fixture() -> tempfile::TempDir {
 fn verify_summary_counts_only_selected_packs() {
     let dir = fixture();
     for bytes in ["first", "other"] {
-        let source = dir.path().join("file");
+        let source = fs::canonicalize(dir.path()).unwrap().join("file");
         fs::write(&source, bytes).unwrap();
         assert!(
             run(dir.path(), &["backup", source.to_str().unwrap()])
@@ -51,7 +51,7 @@ fn verify_summary_counts_only_selected_packs() {
 #[test]
 fn snapshot_columns_align_to_the_widest_host() {
     let dir = fixture();
-    let source = dir.path().join("file");
+    let source = fs::canonicalize(dir.path()).unwrap().join("file");
     fs::write(&source, b"contents").unwrap();
     for host in ["a", "very-long-hostname"] {
         assert!(
