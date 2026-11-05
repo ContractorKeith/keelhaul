@@ -214,6 +214,16 @@ pub(super) fn damage(object: &str, problem: &'static str, detail: &str) -> Error
     }
 }
 
+// Wrapping a collected audit finding must not repeat its object and cause.
+fn damage_detail<'a>(object: &str, problem: &str, detail: &'a str) -> &'a str {
+    let detail = detail
+        .strip_prefix(&format!("{object}: "))
+        .unwrap_or(detail);
+    detail
+        .strip_prefix(&format!("{problem}: "))
+        .unwrap_or(detail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,14 +257,4 @@ mod tests {
             }
         }
     }
-}
-
-// Wrapping a collected audit finding must not repeat its object and cause.
-fn damage_detail<'a>(object: &str, problem: &str, detail: &'a str) -> &'a str {
-    let detail = detail
-        .strip_prefix(&format!("{object}: "))
-        .unwrap_or(detail);
-    detail
-        .strip_prefix(&format!("{problem}: "))
-        .unwrap_or(detail)
 }
