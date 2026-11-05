@@ -9,6 +9,8 @@ use keelhaul::{
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // time's local-zone lookup must precede SSH readers and backup workers.
+    keelhaul::ops::forget::local_offset();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => {

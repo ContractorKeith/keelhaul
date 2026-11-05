@@ -75,6 +75,67 @@ pub fn run(config: &Path, root: &str, scratch: &Path) {
             .any(|slot| slot["id"] == new_id && slot["kind"] == "keyfile")
     );
     assert!(slots.iter().any(|slot| slot["kind"] == "password"));
+    // SFTP starts an ssh reader before retention runs. Startup must capture the
+    // local offset before that reader makes time's safe zone lookup unavailable.
+    let source = scratch.join("retention-source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("file"), b"retention").unwrap();
+    json(
+        command(&repo, config, scratch)
+            .arg("--key-file")
+            .arg(&key)
+            .arg("backup")
+            .arg(&source)
+            .arg("--json")
+            .output()
+            .unwrap(),
+    );
+    {
+        use keelhaul::{
+            backend::{Backend, ObjectName, sftp::SftpBackend},
+            crypto::envelope::Label,
+            repo::Repository,
+            secret::Secret,
+        };
+        let location = format!("{root}-cli");
+        let backend =
+            SftpBackend::with_client(location.clone(), super::connect(config, &location)).unwrap();
+        let repository = Repository::open(
+            backend,
+            &Secret::KeyFile(fs::read(&key).unwrap().try_into().unwrap()),
+        )
+        .unwrap();
+        let (id, mut snapshot) = repository.select_snapshot("latest").unwrap();
+        for stamp in [
+            "2026-11-04T06:00:00.000000000Z",
+            "2026-11-04T02:00:00.000000000Z",
+        ] {
+            snapshot.time = stamp.into();
+            repository
+                .write_object(
+                    "snapshots",
+                    Label::Snapshot,
+                    &serde_json::to_vec(&snapshot).unwrap(),
+                )
+                .unwrap();
+        }
+        repository
+            .backend
+            .delete(&ObjectName::new(&format!("snapshots/{id}")).unwrap())
+            .unwrap();
+    }
+    let retained = json(
+        command(&repo, config, scratch)
+            .arg("--key-file")
+            .arg(&key)
+            .env("TZ", "America/New_York")
+            .env("KEELHAUL_PASSWORD_FILE", "")
+            .env("KEELHAUL_SSH_COMMAND", "")
+            .args(["forget", "--keep-daily", "2", "--dry-run", "--json"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(retained["groups"][0]["keep"].as_array().unwrap().len(), 2);
     // A non-initializing command must not create a missing remote directory.
     let missing = format!("{root}-missing");
     let output = command(&format!("sftp:keelhaul-e2e:{missing}"), config, scratch)

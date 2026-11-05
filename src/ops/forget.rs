@@ -104,9 +104,34 @@ impl Options {
 }
 pub fn forget<B: Backend>(repo: &Repository<B>, options: &Options) -> Result<Report, Error> {
     options.validate()?;
-    // time 0.3.55 refreshes TZ separately from offset lookup. Its safe refresh
-    // refuses unsupported multithreaded environments; never bypass that guard.
-    let local_zone = time::util::refresh_tz().is_some();
+    let fallback = local_offset();
+    forget_with_offsets(repo, options, |time| {
+        // time 0.3.55 separates the guarded TZ refresh from thread-safe
+        // localtime lookups. Preserve historical DST after startup refresh.
+        fallback.and_then(|offset| UtcOffset::local_offset_at(time).ok().or(Some(offset)))
+    })
+}
+static LOCAL_OFFSET: std::sync::OnceLock<Option<UtcOffset>> = std::sync::OnceLock::new();
+/// Call at process startup, before backends or workers spawn any threads.
+pub fn local_offset() -> Option<UtcOffset> {
+    *LOCAL_OFFSET.get_or_init(|| {
+        time::util::refresh_tz()?;
+        UtcOffset::current_local_offset().ok()
+    })
+}
+pub fn forget_with_offset<B: Backend>(
+    repo: &Repository<B>,
+    options: &Options,
+    offset: Option<UtcOffset>,
+) -> Result<Report, Error> {
+    forget_with_offsets(repo, options, |_| offset)
+}
+fn forget_with_offsets<B: Backend>(
+    repo: &Repository<B>,
+    options: &Options,
+    mut offset: impl FnMut(OffsetDateTime) -> Option<UtcOffset>,
+) -> Result<Report, Error> {
+    options.validate()?;
     lock::with(&repo.backend, repo.subkeys(), true, |guard| {
         let scanned = repo.scan_snapshots()?;
         if scanned.damaged {
@@ -120,13 +145,7 @@ pub fn forget<B: Backend>(repo: &Repository<B>, options: &Options) -> Result<Rep
         for selector in &options.snapshots {
             explicit.insert(repo.select_snapshot(selector)?.0);
         }
-        let report = plan(scanned.entries, options, &explicit, |t| {
-            if local_zone {
-                UtcOffset::local_offset_at(t).ok()
-            } else {
-                None
-            }
-        })?;
+        let report = plan(scanned.entries, options, &explicit, &mut offset)?;
         if !options.dry_run {
             guard.self_check()?;
             for group in &report.groups {
