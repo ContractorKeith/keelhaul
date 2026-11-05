@@ -14,6 +14,12 @@
 
 ## 0.1.0 — unreleased
 
+- Skeptic round 1 B: continue restores after item errors, refuse filesystem name
+  collisions, and apply file metadata before publication. Normalize include/list paths.
+- Skip foreign same-secret key slots; handle broken stdout pipes quietly; improve
+  errors, success summaries and help. Refuse empty retention policies, capture the
+  local offset before threads start, and treat empty KEELHAUL environment values as unset.
+- Clarify tree/root writer rules, gear vector hashing, hostname grouping and password files.
 - M0: local and in-memory storage backends, conformance harness, JSON output and
   stable exit codes; Linux and macOS acceptance gates.
 - M1: encrypted repositories, Argon2id password slots, key files and key rotation.

@@ -23,15 +23,16 @@ M1 and M2 vectors are committed and exercised by tests.
 
 For PR #11, the cold reviewer independently recomputed subkeys.json, all eight
 labels in envelope.json, and slot-keyfile.json using a pure-Python
-BLAKE3/XChaCha20-Poly1305 implementation. All outputs matched. The Argon2id KEK
-is not yet independently checked by that pure-Python reviewer. The author
+BLAKE3/XChaCha20-Poly1305 implementation. All outputs matched. On 2026-11-04,
+the release-gate skeptic reviewers independently recomputed the password-slot Argon2id KEK: pure-Python Argon2id on macOS and
+libargon2 on Linux. Both matched the committed vector. The author
 separately cross-checked the password slot with libargon2 through argon2-cffi
 and libsodium through PyNaCl; this is not a pure-Python Argon2 implementation.
 
 envelope-compressed.json adds a fixed data envelope with a compressible payload
 and compression flag 0x01. It was generated separately; existing vectors were
-not regenerated. The compressed vector has not yet received the reviewer's
-independent recomputation.
+not regenerated. The macOS skeptic reviewer independently recomputed the compressed
+envelope and all other envelope vectors on 2026-11-04.
 
 ## M2 production and independent check
 
@@ -52,8 +53,8 @@ and cut points, using Python's optional `blake3` package for hashing only. It wa
 run in an isolated venv with that package and matched both committed vectors.
 The Rust test invokes it when python3 and the package are available; otherwise
 it prints a skip note. This is an independent chunker implementation, not an
-independent implementation of BLAKE3 itself. M2 pack encryption vectors have not
-yet received an independent cryptographic recomputation.
+independent implementation of BLAKE3 itself. The Linux skeptic reviewer independently
+checked the pack and payload vectors on 2026-11-04.
 
 `root-name.json` transcribes SPEC §10's percent-first encoding, including literal
 `%`, `%2F`, and `%25` inside a path component. The vector test checks both
