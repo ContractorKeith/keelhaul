@@ -86,7 +86,12 @@ pub(super) fn snapshots<B: Backend>(
 // Only failed lock writes on readers suggest bypassing locking.
 pub(super) fn lock_hint(error: anyhow::Error, reader: bool) -> anyhow::Error {
     if reader && error.chain().any(|cause| {
-        matches!(cause.downcast_ref::<crate::backend::BackendError>(),
+        matches!(cause.downcast_ref::<crate::backend::BackendError>().or_else(|| {
+            match cause.downcast_ref::<crate::repo::Error>() {
+                Some(crate::repo::Error::Backend(error)) => Some(error),
+                _ => None,
+            }
+        }),
             Some(crate::backend::BackendError::Io { name: Some(name), source, .. })
             if name.as_str().starts_with("locks/") &&
                 (source.kind() == std::io::ErrorKind::PermissionDenied || source.raw_os_error() == Some(30) || source.to_string().contains("HTTP 403")))
@@ -116,7 +121,7 @@ mod tests {
                 source: std::io::Error::from_raw_os_error(code),
             };
             assert_eq!(
-                lock_hint(error.into(), reader)
+                lock_hint(crate::repo::Error::Backend(error).into(), reader)
                     .to_string()
                     .contains("use --no-lock"),
                 expected
