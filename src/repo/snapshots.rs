@@ -7,6 +7,7 @@ use crate::{
 pub struct SnapshotList {
     pub entries: Vec<(String, Snapshot)>,
     pub damaged: bool,
+    pub damage: Vec<crate::damage::Damage>,
 }
 impl<B: Backend> Repository<B> {
     fn read_snapshot(&self, name: &ObjectName) -> Result<(String, Snapshot), Error> {
@@ -23,12 +24,14 @@ impl<B: Backend> Repository<B> {
         let mut result = SnapshotList {
             entries: Vec::new(),
             damaged: false,
+            damage: Vec::new(),
         };
         for candidate in candidates {
             match self.read_snapshot(&candidate.name) {
                 Ok(snapshot) => result.entries.push(snapshot),
                 Err(e @ Error::Damage { .. }) => {
-                    eprintln!("warning: {e}");
+                    crate::output::damage(&e);
+                    result.damage.push(crate::damage::Damage::from_error(e)?);
                     result.damaged = true;
                 }
                 Err(e) => return Err(e),

@@ -2,6 +2,7 @@
 mod destination;
 mod files;
 mod plan;
+mod resume;
 use crate::{
     backend::Backend,
     format::tree::Node,
@@ -12,6 +13,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Default, Serialize)]
 pub struct Report {
     pub restored: u64,
+    #[serde(skip)]
+    pub snapshot: String,
     #[serde(rename = "damage")]
     pub damaged: Vec<crate::damage::Damage>,
     pub failed: Vec<Failure>,
@@ -69,7 +72,37 @@ pub fn restore_for_host_without_lock<B: Backend>(
     includes: &[PathBuf],
     host: Option<&str>,
 ) -> Result<Report, Error> {
-    restore_with_hook(repo, selector, target, includes, host, |_| {})
+    restore_with_hook(repo, selector, target, includes, host, false, |_| {})
+}
+#[derive(Default)]
+pub struct Options<'a> {
+    pub host: Option<&'a str>,
+    pub skip_identical: bool,
+    pub no_lock: bool,
+}
+pub fn restore_with_options<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    target: &Path,
+    includes: &[PathBuf],
+    options: &Options<'_>,
+) -> Result<Report, Error> {
+    let run = || {
+        restore_with_hook(
+            repo,
+            selector,
+            target,
+            includes,
+            options.host,
+            options.skip_identical,
+            |_| {},
+        )
+    };
+    if options.no_lock {
+        run()
+    } else {
+        crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| run())
+    }
 }
 fn restore_with_hook<B: Backend>(
     repo: &Repository<B>,
@@ -77,18 +110,31 @@ fn restore_with_hook<B: Backend>(
     target: &Path,
     includes: &[PathBuf],
     host: Option<&str>,
+    skip_identical: bool,
     mut before_entry: impl FnMut(&Path),
 ) -> Result<Report, Error> {
-    let (snapshot_id, snapshot) = super::listing::select_snapshot_for_host(repo, selector, host)?;
+    let (snapshot_id, snapshot, damage) =
+        super::listing::select_snapshot_for_host(repo, selector, host)?;
     let mut store = BlobStore::load_quiet(repo)?;
     let mut report = Report {
         damaged: store.damage.clone(),
         ..Report::default()
     };
+    report.snapshot = snapshot_id.clone();
+    report.damaged.extend(damage);
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)
         .map_err(|error| Error::Refused(format!("{}: {error}", target.display())))?;
-    let mut preflight = destination.preflight(&items)?;
+    let mut identical = std::collections::HashSet::new();
+    if skip_identical {
+        for item in &items {
+            if resume::identical(&destination, &store, item)? {
+                identical.insert(item.path.clone());
+            }
+        }
+    }
+    let mut preflight = destination.preflight(&items, &identical)?;
+    destination.cleanup_temps(&items)?;
     let mut hardlinks = files::Hardlinks::new();
     let mut blocked = std::collections::HashSet::new();
     for (path, error) in preflight.failed.drain(..) {
@@ -97,6 +143,10 @@ fn restore_with_hook<B: Backend>(
     }
     let mut completed = std::collections::HashSet::new();
     for item in &items {
+        if identical.contains(&item.path) {
+            destination.remember(&item.path)?;
+            continue;
+        }
         if item.path.ancestors().any(|path| blocked.contains(path)) {
             continue;
         }
@@ -167,6 +217,7 @@ fn restore_with_hook<B: Backend>(
         report.failure(&path, error);
     }
     destination.finish()?;
+    report.damaged.extend(store.damage);
     report.damaged.sort_by(|a, b| {
         (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
     });

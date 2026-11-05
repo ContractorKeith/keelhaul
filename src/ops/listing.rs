@@ -41,11 +41,13 @@ pub fn ls_for_host<B: Backend>(
 ) -> Result<Vec<Listed>, Error> {
     let report = ls_report_for_host(repo, selector, filter, host)?;
     for damage in &report.damage {
-        eprintln!("warning: {damage}");
+        crate::output::damage(damage);
     }
     Ok(report.entries)
 }
+#[derive(Serialize)]
 pub struct ListingReport {
+    pub snapshot: String,
     pub entries: Vec<Listed>,
     pub damage: Vec<crate::damage::Damage>,
 }
@@ -66,7 +68,7 @@ pub fn ls_report_for_host_without_lock<B: Backend>(
     filter: Option<&Path>,
     host: Option<&str>,
 ) -> Result<ListingReport, Error> {
-    let (_, snapshot) = select_snapshot_for_host(repo, selector, host)?;
+    let (snapshot_id, snapshot, damage) = select_snapshot_for_host(repo, selector, host)?;
     let mut store = BlobStore::load_quiet(repo)?;
     let mut output = Vec::new();
     let filter = filter
@@ -92,7 +94,9 @@ pub fn ls_report_for_host_without_lock<B: Backend>(
             filter.display()
         )));
     }
+    store.damage.extend(damage);
     Ok(ListingReport {
+        snapshot: snapshot_id,
         entries: output,
         damage: store.damage,
     })
@@ -211,15 +215,24 @@ pub(super) fn select_snapshot_for_host<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
     host: Option<&str>,
-) -> Result<(String, crate::format::snapshot::Snapshot), Error> {
+) -> Result<
+    (
+        String,
+        crate::format::snapshot::Snapshot,
+        Vec<crate::damage::Damage>,
+    ),
+    Error,
+> {
     if selector != "latest" {
-        return repo.select_snapshot_for_host(selector, host);
+        return repo
+            .select_snapshot_for_host(selector, host)
+            .map(|(id, s)| (id, s, Vec::new()));
     }
     let scanned = repo.scan_snapshots()?;
     let local = crate::host::hostname();
     let host = host.unwrap_or(&local);
     if let Some(found) = scanned.entries.iter().rev().find(|(_, s)| s.host == host) {
-        return Ok(found.clone());
+        return Ok((found.0.clone(), found.1.clone(), scanned.damage));
     }
     let readable = scanned.entries.len();
     let mut hosts = std::collections::BTreeMap::new();

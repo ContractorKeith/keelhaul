@@ -288,3 +288,7 @@ while logged out. Schedule full verification separately and inspect failures.
 
 Run `scripts/accept.sh` for formatting, linting, tests and a live backup/restore
 round trip. Docker e2e and longer crash loops are described in the plan.
+
+For resuming an interrupted restore, rerun with `restore latest --target TARGET --skip-identical`. Existing regular files are skipped only after their size and
+chunk hashes match the snapshot; different files remain conflicts. Restore cleans
+stale `.keelhaul-<hex>` temporary files in the directories it writes.

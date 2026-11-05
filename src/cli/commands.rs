@@ -1,7 +1,19 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
 
-pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+pub fn run(cli: Cli) -> anyhow::Result<()> {
+    let read_only = matches!(
+        cli.command,
+        Command::Snapshots { .. }
+            | Command::Ls { .. }
+            | Command::Restore { .. }
+            | Command::Check
+            | Command::Verify { .. }
+    );
+    run_inner(cli).map_err(|error| super::readers::lock_hint(error, read_only))
+}
+fn run_inner(mut cli: Cli) -> anyhow::Result<()> {
+    output::configure(cli.quiet, cli.json);
     if cli.no_lock {
         if !matches!(
             cli.command,
@@ -16,7 +28,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
             )
             .into());
         }
-        eprintln!("warning: --no-lock skips repository locking; exclude concurrent writers");
+        crate::warning!("warning: --no-lock skips repository locking; exclude concurrent writers");
     }
     super::secrets::resolve(&mut cli);
     match cli.command {
@@ -76,7 +88,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         println!("{}", serde_json::to_string(&report)?);
                     } else {
                         for damage in &report.damage {
-                            println!("{damage}");
+                            output::damage(damage);
                         }
                         for note in &report.notes {
                             println!("{}: {}", note.object.escape_debug(), note.problem);
@@ -84,7 +96,18 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         if report.damage.is_empty() {
                             println!(
                                 "no damage: {} packs, {} snapshots checked",
-                                backend.list(crate::backend::Kind::Data)?.len(),
+                                backend
+                                    .list(crate::backend::Kind::Data)?
+                                    .iter()
+                                    .filter(|entry| {
+                                        match command {
+                                            Command::Verify {
+                                                subset: Some(subset),
+                                            } => subset.contains(&entry.name.as_str()[8..]),
+                                            _ => true,
+                                        }
+                                    })
+                                    .count(),
                                 backend.list(crate::backend::Kind::Snapshots)?.len()
                             );
                         }
@@ -151,7 +174,18 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         summary.indexes_removed,
                         if dry_run { " (dry run)" } else { "" }
                     );
-                    (serde_json::to_value(summary)?, text)
+                    if cli.json {
+                        println!("{}", serde_json::to_string(&summary)?);
+                    } else {
+                        println!("{text}");
+                        for damage in &summary.damage {
+                            output::damage(damage);
+                        }
+                    }
+                    if !summary.damage.is_empty() {
+                        super::backup::completed_damage()?;
+                    }
+                    return Ok(());
                 }
                 Command::Unlock => {
                     let repo = Repository::open(backend, &secret)?;
@@ -214,6 +248,7 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                         snap,
                         target,
                         include,
+                        skip_identical,
                         host,
                     } = command
                     {
@@ -222,9 +257,12 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                             &snap,
                             &target,
                             &include,
-                            host.as_deref(),
+                            crate::ops::restore::Options {
+                                host: host.as_deref(),
+                                skip_identical,
+                                no_lock: cli.no_lock,
+                            },
                             cli.json,
-                            cli.no_lock,
                         )?;
                     } else if let Command::Ls { snap, path, host } = command {
                         super::audit::listing(

@@ -1,5 +1,36 @@
 use serde::Serialize;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// One command-wide context also covers warnings from backend/backup workers.
+static QUIET: AtomicBool = AtomicBool::new(false);
+static JSON: AtomicBool = AtomicBool::new(false);
+static WARNED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+pub fn configure(quiet: bool, json: bool) {
+    WARNED.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    QUIET.store(quiet, Ordering::Relaxed);
+    JSON.store(json, Ordering::Relaxed);
+}
+fn informational() -> bool {
+    !QUIET.load(Ordering::Relaxed) || JSON.load(Ordering::Relaxed)
+}
+pub fn warning(args: std::fmt::Arguments<'_>) {
+    if informational() {
+        eprintln!("{args}");
+    }
+}
+pub fn damage(value: &impl std::fmt::Display) {
+    let text = value.to_string();
+    let text = text.strip_prefix("damage: ").unwrap_or(&text);
+    if WARNED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(text.into())
+    {
+        eprintln!("{text}");
+    }
+}
 
 #[derive(Serialize)]
 struct Version<'a> {
@@ -23,7 +54,11 @@ pub fn stdout() -> impl Write {
 struct StdoutWriter(io::Stdout);
 impl Write for StdoutWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.write(bytes).map_err(mark)
+        if informational() {
+            self.0.write(bytes).map_err(mark)
+        } else {
+            Ok(bytes.len())
+        }
     }
     fn flush(&mut self) -> io::Result<()> {
         self.0.flush().map_err(mark)

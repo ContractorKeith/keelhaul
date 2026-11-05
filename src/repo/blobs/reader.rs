@@ -1,6 +1,9 @@
 //! Authenticated ranged reads and complete index/header agreement.
 use super::*;
 impl<B: Backend> BlobStore<'_, B> {
+    pub(crate) fn chunk_id_key(&self) -> [u8; 32] {
+        self.repo.subkeys().chunk_id
+    }
     pub(crate) fn indexed_blobs_exist(
         &self,
         expected: &HashSet<(BlobKind, String)>,
@@ -89,8 +92,24 @@ impl<B: Backend> BlobStore<'_, B> {
             return Ok(());
         }
         let name = pack_name(id)?;
-        let header =
-            crate::repo::audit::header(&self.repo.backend, &self.repo.master.subkeys(), &name)?;
+        let header = match crate::repo::audit::header(
+            &self.repo.backend,
+            &self.repo.master.subkeys(),
+            &name,
+        ) {
+            Ok(header) => header,
+            Err(
+                error @ Error::Damage {
+                    problem: "bad-header" | "truncated",
+                    ..
+                },
+            ) if self.headers.contains_key(id) => {
+                self.damage.push(crate::damage::Damage::from_error(error)?);
+                self.verified.insert(id.into());
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         if let Some((object, expected)) = self.headers.get(id)
             && expected != &header.blobs
         {

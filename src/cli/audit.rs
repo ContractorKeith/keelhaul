@@ -18,7 +18,7 @@ pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
             })?
         );
     } else {
-        eprintln!("{damage}");
+        crate::output::damage(&damage);
     }
     super::backup::completed_damage()?;
     Ok(())
@@ -29,25 +29,36 @@ pub(super) fn restore<B: crate::backend::Backend>(
     snap: &str,
     target: &std::path::Path,
     includes: &[std::path::PathBuf],
-    host: Option<&str>,
+    options: crate::ops::restore::Options<'_>,
     json: bool,
-    no_lock: bool,
 ) -> anyhow::Result<()> {
-    let result = if no_lock {
-        crate::ops::restore::restore_for_host_without_lock(repo, snap, target, includes, host)
-    } else {
-        crate::ops::restore::restore_for_host(repo, snap, target, includes, host)
-    };
+    let result = crate::ops::restore::restore_with_options(repo, snap, target, includes, &options);
     let report = match result {
         Ok(report) => report,
         Err(error) => return restore_failure(error, json),
     };
     if json {
-        println!("{}", serde_json::to_string(&report)?);
+        #[derive(serde::Serialize)]
+        struct Output<'a> {
+            #[serde(flatten)]
+            report: &'a crate::ops::restore::Report,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            snapshot: Option<&'a str>,
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&Output {
+                report: &report,
+                snapshot: (!report.damaged.is_empty()).then_some(report.snapshot.as_str()),
+            })?
+        );
     } else {
-        println!("restored {} entries", report.restored);
+        println!(
+            "restored {} entries from snapshot {}",
+            report.restored, report.snapshot
+        );
         for damage in &report.damaged {
-            eprintln!("{damage}");
+            crate::output::damage(&damage);
         }
         for failure in &report.failed {
             eprintln!("{}: {}", failure.path, failure.error);
@@ -77,8 +88,15 @@ pub(super) fn listing<B: crate::backend::Backend>(
         crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?
     };
     if json {
-        println!("{}", serde_json::to_string(&report.entries)?);
+        if report.damage.is_empty() {
+            println!("{}", serde_json::to_string(&report.entries)?);
+        } else {
+            println!("{}", serde_json::to_string(&report)?);
+        }
     } else {
+        if selector == "latest" && !report.damage.is_empty() {
+            crate::warning!("using snapshot {}", report.snapshot);
+        }
         for entry in &report.entries {
             println!(
                 "{}{}",
@@ -92,7 +110,7 @@ pub(super) fn listing<B: crate::backend::Backend>(
         }
     }
     for damage in &report.damage {
-        eprintln!("{damage}");
+        crate::output::damage(&damage);
     }
     if !report.damage.is_empty() {
         super::backup::completed_damage()?;

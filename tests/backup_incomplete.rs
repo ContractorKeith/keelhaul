@@ -47,7 +47,8 @@ fn unreadable_file_writes_snapshot_with_exit_five_but_fifo_is_expected() {
     assert_eq!(value["incomplete"], true);
     assert_eq!(value["summary"]["files_skipped"], 1);
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("snapshot written; 1 entries skipped")
+        String::from_utf8_lossy(&output.stderr)
+            .contains("snapshot written; 1 skipped (0 unsupported types)")
     );
     let output = run(&["snapshots", "--json"]);
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();

@@ -134,3 +134,35 @@ fn damaged_indexes_report_once_after_restore_and_listing_output() {
         b"recoverable"
     );
 }
+
+#[test]
+fn slot_damage_is_printed_once_when_open_and_audit_both_find_it() {
+    let scratch = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(scratch.path()).unwrap();
+    fs::write(root.join("key"), [7; 32]).unwrap();
+    assert!(run(&root, &["init"]).status.success());
+    let slot = fs::read_dir(root.join("repo/keys"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&slot).unwrap()).unwrap();
+    value["check"] = "00".repeat(32).into();
+    fs::write(&slot, serde_json::to_vec(&value).unwrap()).unwrap();
+    for command in ["check", "verify"] {
+        let out = run(&root, &[command]);
+        assert_eq!(out.status.code(), Some(3));
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            text.matches(slot.file_name().unwrap().to_str().unwrap())
+                .count(),
+            1,
+            "{text}"
+        );
+    }
+}

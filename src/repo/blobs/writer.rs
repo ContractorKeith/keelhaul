@@ -76,71 +76,15 @@ impl<'a, B: Backend> BlobStore<'a, B> {
     }
 }
 
-/// Per-run verification state; a damaged header is cached too.
-#[derive(Default)]
-pub struct Healing {
-    headers: HashMap<String, bool>,
-}
 impl<B: Backend> BlobStore<'_, B> {
-    /// Verify one indexed copy before deduplicating. Only damage is healable;
+    /// Verify indexed copies before deduplicating. Only damage is healable;
     /// transport and resource failures still abort the backup.
-    pub fn add_healing(&mut self, blob: SealedBlob, checked: &mut Healing) -> Result<bool, Error> {
+    pub fn add_healing(&mut self, blob: SealedBlob) -> Result<bool, Error> {
         let key = (blob.kind, blob.id.clone());
         let mut healed = self.suspect.contains(&key);
-        if let Some(location) = self.index.get(&key).cloned() {
-            let name = pack_name(&location.pack)?;
-            let keys = self.repo.master.subkeys();
-            let header_ok = match checked.headers.get(&location.pack) {
-                Some(ok) => *ok,
-                None => {
-                    let result = crate::repo::audit::header(&self.repo.backend, &keys, &name)
-                        .and_then(|header| {
-                            if self
-                                .headers
-                                .get(&location.pack)
-                                .is_none_or(|(_, expected)| *expected != header.blobs)
-                            {
-                                return Err(damage(
-                                    name.as_str(),
-                                    "index-mismatch",
-                                    "index differs from complete pack header",
-                                ));
-                            }
-                            Ok(())
-                        });
-                    let ok = match result {
-                        Ok(()) => true,
-                        Err(Error::Damage { .. }) => false,
-                        Err(error) => return Err(error),
-                    };
-                    checked.headers.insert(location.pack.clone(), ok);
-                    ok
-                }
-            };
-            let result = if header_ok {
-                self.repo
-                    .backend
-                    .read_range(&name, location.blob.offset, location.blob.length)
-                    .map_err(|e| missing(&name, e))
-                    .and_then(|stored| {
-                        crate::repo::audit::blob(
-                            &keys,
-                            &blob.id,
-                            name.as_str(),
-                            &location.blob,
-                            &stored,
-                        )
-                        .map(|_| ())
-                    })
-            } else {
-                Err(damage(
-                    name.as_str(),
-                    "bad-header",
-                    "stored pack header failed verification",
-                ))
-            };
-            match result {
-                Ok(()) => return Ok(false),
+        if self.index.contains_key(&key) {
+            match self.read(blob.kind, &blob.id) {
+                Ok(_) => return Ok(false),
                 Err(Error::Damage { .. }) => {
                     self.suspect_blob(blob.kind, &blob.id);
                     healed = true;

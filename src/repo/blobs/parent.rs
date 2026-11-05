@@ -12,6 +12,21 @@ impl<B: Backend> BlobStore<'_, B> {
                     .map_err(|e| missing(&name, e))
                     .and_then(|bytes| {
                         if blake3::hash(&bytes).to_hex().as_str() != location.pack {
+                            // Header damage does not invalidate independently authenticated
+                            // indexed blobs. `read` records it and verifies this tree below.
+                            if matches!(
+                                crate::repo::audit::header(
+                                    &self.repo.backend,
+                                    &self.repo.subkeys(),
+                                    &name
+                                ),
+                                Err(Error::Damage {
+                                    problem: "bad-header" | "truncated",
+                                    ..
+                                })
+                            ) {
+                                return Ok(());
+                            }
                             return Err(damage(
                                 name.as_str(),
                                 "hash-mismatch",

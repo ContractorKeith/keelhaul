@@ -19,3 +19,35 @@ fn a_foreign_slot_does_not_allow_removing_the_last_genuine_slot() {
     assert!(repo.backend.read(&genuine).is_ok());
     repo.remove_key(&other.as_str()[5..]).unwrap();
 }
+
+#[test]
+fn foreign_secret_names_the_slot_that_does_not_authenticate_config() {
+    let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
+    let foreign_secret = Secret::KeyFile([8; 32]);
+    let foreign = Repository::init(MemoryBackend::new(), &foreign_secret).unwrap();
+    let name = foreign.backend.list(Kind::Keys).unwrap()[0].name.clone();
+    repo.backend
+        .plant_raw(name.as_str(), &foreign.backend.read(&name).unwrap())
+        .unwrap();
+    for error in [
+        keelhaul::ops::check::check_backend(&repo.backend, &foreign_secret).unwrap_err(),
+        keelhaul::ops::verify::verify_backend(&repo.backend, &foreign_secret, None).unwrap_err(),
+    ] {
+        assert!(
+            error.to_string().contains(&format!(
+                "key slot {name} opened with this secret belongs to another repository"
+            )),
+            "{error}"
+        );
+    }
+    let error = Repository::open(repo.backend, &foreign_secret)
+        .err()
+        .unwrap();
+    assert!(matches!(error, Error::Damage { .. }));
+    assert!(
+        error.to_string().contains(&format!(
+            "key slot {name} opened with this secret belongs to another repository"
+        )),
+        "{error}"
+    );
+}

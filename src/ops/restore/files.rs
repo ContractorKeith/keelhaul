@@ -44,7 +44,7 @@ pub(super) fn restore_file<B: Backend>(
         if destination.hardlink(&first.path, &item.path, first.identity)? {
             return Ok(());
         }
-        eprintln!(
+        crate::warning!(
             "warning: hardlink source {} was replaced or is unavailable; restoring {} independently",
             first.path.display(),
             item.path.display()

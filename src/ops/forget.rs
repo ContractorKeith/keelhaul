@@ -229,7 +229,7 @@ pub fn plan(
                 })?;
                 let local = utc.to_offset(offset(utc).unwrap_or_else(|| {
                     if !warned {
-                        eprintln!(
+                        crate::warning!(
                             "warning: local time zone offset unavailable; retention uses UTC"
                         );
                         warned = true;

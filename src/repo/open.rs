@@ -75,7 +75,7 @@ impl<B: Backend> Repository<B> {
             BackendError::NotFound(_) => damage("config", "missing", "config is missing"),
             other => Error::Backend(other),
         })?;
-        let master = Self::unlock(&backend, secret)?;
+        let (master, opened_slot) = Self::unlock_with_slot(&backend, secret)?;
         let payload =
             envelope::open(&master.subkeys().encryption, Label::Config, &bytes).map_err(|e| {
                 let problem = if matches!(e, envelope::Error::Undecryptable) {
@@ -83,7 +83,11 @@ impl<B: Backend> Repository<B> {
                 } else {
                     "bad-format"
                 };
-                damage("config", problem, &e.to_string())
+                if let Some(slot) = &opened_slot {
+                    foreign_slot(slot)
+                } else {
+                    damage("config", problem, &e.to_string())
+                }
             })?;
         let config = Config::parse(&payload).map_err(|e| damage("config", "bad-format", &e))?;
         Ok(Self {
@@ -95,9 +99,20 @@ impl<B: Backend> Repository<B> {
 
     /// Unlock independently of config so audits can collect config damage too.
     pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
+        let (master, opened_slot) = Self::unlock_with_slot(backend, secret)?;
+        if let Some(slot) = opened_slot {
+            return Err(foreign_slot(&slot));
+        }
+        Ok(master)
+    }
+    fn unlock_with_slot(
+        backend: &B,
+        secret: &Secret,
+    ) -> Result<(MasterKey, Option<String>), Error> {
         let mut entries = backend.list(Kind::Keys)?;
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let mut unreadable = Vec::new();
+        let mut parsed = Vec::new();
         let mut master = None;
         let config = match backend.read(&ObjectName::new("config")?) {
             Ok(bytes) => Some(bytes),
@@ -116,22 +131,31 @@ impl<B: Backend> Repository<B> {
                     envelope::open(&key.subkeys().encryption, Label::Config, bytes).is_ok()
                 }) {
                     if slot::verify_check(&slot, &key.subkeys().key_slot_check).is_err() {
-                        eprintln!(
-                            "warning: {}",
-                            damage(
-                                entry.name.as_str(),
-                                "hash-mismatch",
-                                "key slot check differs"
-                            )
-                        );
+                        crate::output::damage(&damage(
+                            entry.name.as_str(),
+                            "hash-mismatch",
+                            "key slot check differs",
+                        ));
                     }
-                    return Ok(key);
+                    return Ok((key, None));
                 }
                 // Preserve an unwrapped key for audits of a damaged config. Open
                 // still authenticates and parses config before accepting this key.
                 if master.is_none() {
-                    master = Some(key);
+                    master = Some((key, Some(entry.name.to_string())));
                 }
+            }
+            parsed.push((entry.name.to_string(), slot));
+        }
+        if let Some((key, opened)) = &mut master {
+            // A sole slot (or slots agreeing on the same master key) identifies
+            // config damage. A foreign slot disagrees with the repository's
+            // other slots as well as failing config authentication.
+            if !parsed.iter().any(|(name, slot)| {
+                Some(name) != opened.as_ref()
+                    && slot::verify_check(slot, &key.subkeys().key_slot_check).is_err()
+            }) {
+                *opened = None;
             }
         }
         master.ok_or_else(|| {
@@ -213,6 +237,16 @@ impl<B: Backend> Repository<B> {
             .delete(&ObjectName::new(&format!("keys/{id}"))?)?;
         Ok(())
     }
+}
+
+fn foreign_slot(slot: &str) -> Error {
+    damage(
+        slot,
+        "undecryptable",
+        &format!(
+            "key slot {slot} opened with this secret belongs to another repository; config authentication failed"
+        ),
+    )
 }
 
 pub(super) fn damage(object: &str, problem: &'static str, detail: &str) -> Error {

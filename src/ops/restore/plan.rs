@@ -188,7 +188,7 @@ pub(super) fn build<B: Backend>(
             .components()
             .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
         {
-            return Err(Error::Refused("include path must not contain '..'".into()));
+            return Err(Error::Usage("include path must not contain '..'".into()));
         }
         normalized.push(
             crate::ops::paths::normalize_root(path)
@@ -236,7 +236,7 @@ pub(super) fn build<B: Backend>(
     }
     for item in &mut items {
         if independent.contains(&(item.entry.device, item.entry.inode)) {
-            eprintln!(
+            crate::warning!(
                 "warning: {}: inconsistent hardlink content; restoring independently",
                 item.path.display()
             );

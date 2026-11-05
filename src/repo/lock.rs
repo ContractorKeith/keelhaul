@@ -147,7 +147,7 @@ impl<'a, B: Backend> Guard<'a, B> {
                     Err(mpsc::RecvTimeoutError::Timeout)
                 ) {
                     if let Err(error) = self.refresh() {
-                        eprintln!("warning: lock refresh failed: {error}");
+                        crate::warning!("warning: lock refresh failed: {error}");
                     }
                 }
             });
@@ -172,7 +172,7 @@ where
         {
             for name in std::iter::once(&held.name).chain(&held.retired) {
                 if let Err(error) = self.backend.delete(name) {
-                    eprintln!("warning: cannot release lock {name}: {error}");
+                    crate::warning!("warning: cannot release lock {name}: {error}");
                 }
             }
         }
@@ -195,7 +195,7 @@ fn write<B: Backend>(backend: &B, keys: &Subkeys, payload: &Lock) -> Result<Obje
     let name = ObjectName::new(&format!("locks/{}", blake3::hash(&bytes).to_hex()))?;
     if let Err(error) = backend.write(&name, &bytes) {
         let _ = backend.delete(&name);
-        return Err(error.into());
+        return Err(error.context(Some(&name), None).into());
     }
     Ok(name)
 }
