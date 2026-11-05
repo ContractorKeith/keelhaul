@@ -39,6 +39,37 @@ pub(super) fn ensure_directory(path: &Path, root: &Path) -> Result<(), BackendEr
     }
 }
 
+pub(super) fn lock_directory(
+    file: &File,
+    path: &Path,
+    timeout: std::time::Duration,
+) -> Result<(), BackendError> {
+    let start = std::time::Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if start.elapsed() >= timeout {
+                    return Err(at(
+                        path,
+                        io::Error::other(format!(
+                            "repository directory busy: {}; another keelhaul process may be suspended",
+                            path.display()
+                        )),
+                    ));
+                }
+                std::thread::sleep(
+                    std::time::Duration::from_millis(50)
+                        .min(timeout.saturating_sub(start.elapsed())),
+                );
+            }
+            Err(std::fs::TryLockError::Error(error)) => {
+                return lock_result(Err(error)).map_err(|e| at(path, e));
+            }
+        }
+    }
+}
+
 pub(super) fn lock_result(result: io::Result<()>) -> io::Result<()> {
     // NFS/CIFS may lack locks; rename stays atomic for identical content-addressed writes.
     #[cfg(target_os = "linux")]

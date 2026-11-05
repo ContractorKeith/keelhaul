@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased fixes
+
+- Bound local directory lock waits and write/fsync temporary objects before locking.
+
 ## 0.1.0 — unreleased
 
 - M0: local and in-memory storage backends, conformance harness, JSON output and
