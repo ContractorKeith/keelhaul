@@ -2,7 +2,8 @@
 mod preflight;
 mod publication;
 use crate::{format::tree::Entry, repo::Error};
-use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, RenameFlags, Timespec, Timestamps, Uid};
+pub(super) use publication::Temporary;
+use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, Timespec, Timestamps, Uid};
 use std::{
     ffi::OsString,
     fs::File,
@@ -221,48 +222,7 @@ impl FileIdentity {
         }
     }
 }
-pub(super) struct Temporary {
-    parent: File,
-    name: OsString,
-    final_name: OsString,
-    pub file: File,
-}
-impl Temporary {
-    pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
-        self.file.sync_all()?;
-        let renamed = fs::renameat_with(
-            &self.parent,
-            &self.name,
-            &self.parent,
-            &self.final_name,
-            RenameFlags::NOREPLACE,
-        );
-        publication::finish(
-            renamed,
-            &self.final_name,
-            || {
-                fs::linkat(
-                    &self.parent,
-                    &self.name,
-                    &self.parent,
-                    &self.final_name,
-                    AtFlags::empty(),
-                )
-            },
-            || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
-        )?;
-        apply(&self.file, entry)?;
-        self.file.sync_all()?;
-        self.parent.sync_all()?;
-        let stat = fs::fstat(&self.file).map_err(os)?;
-        Ok(FileIdentity::from_stat(&stat))
-    }
-}
-impl Drop for Temporary {
-    fn drop(&mut self) {
-        let _ = fs::unlinkat(&self.parent, &self.name, AtFlags::empty());
-    }
-}
+
 fn owners(entry: &Entry) -> Result<(Uid, Gid), Error> {
     if entry.uid == u32::MAX || entry.gid == u32::MAX {
         return Err(Error::Refused("cannot restore sentinel owner ID".into()));
