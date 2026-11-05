@@ -94,7 +94,22 @@ impl<'a, B: Backend> State<'a, B> {
         Ok(tree)
     }
     pub(super) fn reachable(&mut self) -> Result<(), Error> {
-        trees::walk(self, false)
+        trees::walk(self, false)?;
+        // Prune must not mistake recovered, unused orphan blobs for indexed data:
+        // young packs (or packs with unknown ages) still need their grace period.
+        let orphans = self
+            .report
+            .notes
+            .iter()
+            .filter(|note| note.kind == "pack" && note.problem == "orphan")
+            .map(|note| note.object[8..].to_owned())
+            .collect::<HashSet<_>>();
+        let used = &self.used;
+        self.live.retain(|key, locations| {
+            locations.retain(|(pack, _)| !orphans.contains(pack) || used.contains(key));
+            !locations.is_empty()
+        });
+        Ok(())
     }
     pub fn finish(mut self, verify: bool) -> Result<Report, Error> {
         self.audit_tree_blobs()?;
