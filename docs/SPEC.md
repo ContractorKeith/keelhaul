@@ -1,7 +1,7 @@
 # keelhaul repository format, version 1
 
-Status: draft until release 0.1.0 tags; then frozen. A change to this file lands as its own
-PR before the code that implements it. Words in **bold** are defined in `CONTEXT.md`.
+Status: frozen as format version 1 at keelhaul 0.1.0. A later format is version 2; v1
+repositories stay readable. A clarification to this file lands as its own PR. Words in **bold** are defined in `CONTEXT.md`.
 
 This document is the contract. Someone with only this file, a JSON parser, BLAKE3,
 XChaCha20-Poly1305, Argon2id and zstd must be able to write a reader that lists snapshots

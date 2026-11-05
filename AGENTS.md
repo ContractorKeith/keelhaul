@@ -12,7 +12,7 @@ checklist in §10.
 
 ## Status
 
-M0 harness implemented (2026-11-04); M1–M8 pending. Milestones are GitHub issues #1–#9.
+0.1.0 released 2026-11-05: milestones M0–M8 (#1–#9) merged; three skeptic-review rounds on Linux and macOS fixed (#23–#49). Format v1 frozen. Next: post-v1 Later rows in `docs/PLAN.md` §3.
 
 ## Commands
 

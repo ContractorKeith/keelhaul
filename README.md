@@ -5,9 +5,8 @@ disk, SFTP or S3-compatible storage; restore whole snapshots or selected files.
 Keyed FastCDC splits changed data into chunks, zstd compresses them, and
 XChaCha20-Poly1305 encrypts them. Password slots use Argon2id; key files are also supported.
 
-**0.1.0 is in preparation.** Release archives appear on each tag; Homebrew and crates.io
-installs follow shortly after (see `docs/RELEASING.md`). The repository format is draft until
-the tag.
+**0.1.0** is the first release. The repository format is version 1 and frozen
+(`docs/SPEC.md`).
 MIT licensed.
 
 ## Install
