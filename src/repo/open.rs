@@ -193,8 +193,12 @@ impl<B: Backend> Repository<B> {
         if !slots.iter().any(|(found, _)| found == id) {
             return Err(Error::Refused(format!("key slot {id} not found")));
         }
-        if slots.len() <= 1 {
-            return Err(Error::Refused("cannot remove the last key slot".into()));
+        if !slots.iter().any(|(found, slot)| {
+            found != id && slot::verify_check(slot, &self.subkeys().key_slot_check).is_ok()
+        }) {
+            return Err(Error::Refused(
+                "cannot remove the last key slot with a valid check tag for this repository".into(),
+            ));
         }
         self.backend
             .delete(&ObjectName::new(&format!("keys/{id}"))?)?;
