@@ -6,6 +6,8 @@ mod publication;
 #[cfg(test)]
 #[path = "backup/read_tests.rs"]
 mod read_tests;
+#[path = "backup/resources.rs"]
+mod resources;
 #[cfg(test)]
 mod tests;
 mod trees;
@@ -120,6 +122,7 @@ fn backup_locked<B: Backend>(
     if paths.is_empty() {
         return Err(Error::Refused("backup needs at least one path".into()));
     }
+    resources::jobs(options.jobs)?;
     let patterns = Patterns::new(&options.excludes)?;
     let mut failures = Vec::new();
     let mut roots = Vec::new();
@@ -127,6 +130,7 @@ fn backup_locked<B: Backend>(
         let normalized = match absolute(input) {
             Ok(path) => path,
             Err(error) => {
+                resources::check(input, &error)?;
                 failures.push(skipped(input, error));
                 continue;
             }
@@ -134,6 +138,7 @@ fn backup_locked<B: Backend>(
         let meta = match std::fs::symlink_metadata(input) {
             Ok(meta) => meta,
             Err(error) => {
+                resources::check(input, &error)?;
                 failures.push(skipped(input, error));
                 continue;
             }

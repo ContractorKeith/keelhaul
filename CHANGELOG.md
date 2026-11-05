@@ -2,6 +2,8 @@
 
 ## Unreleased fixes
 
+- Abort backups on descriptor or memory exhaustion, with a jobs/ulimit hint.
+
 - Preserve files that change during reads and report their count in backup JSON.
 
 - Bound local directory lock waits and write/fsync temporary objects before locking.

@@ -39,6 +39,7 @@ pub(super) fn run(
         let device = match fs::symlink_metadata(input) {
             Ok(m) => m.dev(),
             Err(e) => {
+                super::resources::check(input, &e)?;
                 send(
                     &events,
                     Event::Skip(
@@ -59,6 +60,7 @@ pub(super) fn run(
             let meta = match fs::symlink_metadata(&path) {
                 Ok(m) => m,
                 Err(e) => {
+                    super::resources::check(&path, &e)?;
                     send(&events, Event::Skip((root_index, key), path, e.to_string()))?;
                     continue;
                 }
@@ -74,6 +76,7 @@ pub(super) fn run(
                 let children = match fs::read_dir(&path) {
                     Ok(children) => children,
                     Err(e) => {
+                        super::resources::check(&path, &e)?;
                         send(&events, Event::Skip((root_index, key), path, e.to_string()))?;
                         continue;
                     }
@@ -82,7 +85,10 @@ pub(super) fn run(
                 for child in children {
                     match child {
                         Ok(c) => children_paths.push(c.path()),
-                        Err(e) => send(&events, Event::Warning(path.clone(), e.to_string()))?,
+                        Err(e) => {
+                            super::resources::check(&path, &e)?;
+                            send(&events, Event::Warning(path.clone(), e.to_string()))?;
+                        }
                     }
                 }
                 let count = children_paths.len();
@@ -114,6 +120,7 @@ pub(super) fn run(
                         Node::Symlink { target, target_b64 }
                     }
                     Err(e) => {
+                        super::resources::check(&path, &e)?;
                         send(&events, Event::Skip((root_index, key), path, e.to_string()))?;
                         continue;
                     }

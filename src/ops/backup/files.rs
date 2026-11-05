@@ -39,12 +39,14 @@ pub(super) fn read(
     {
         Ok(f) => f,
         Err(e) => {
+            super::resources::check(&path, &e)?;
             return send(events, Event::Skip(key, path, e.to_string()));
         }
     };
     let opened = match file.metadata() {
         Ok(m) => m,
         Err(e) => {
+            super::resources::check(&path, &e)?;
             return send(events, Event::Skip(key, path, e.to_string()));
         }
     };
@@ -68,6 +70,7 @@ pub(super) fn read(
             Ok(Some(bytes)) => bytes,
             Ok(None) => break,
             Err(e) => {
+                super::resources::check(&path, &e)?;
                 return send(events, Event::Skip(key, path, e.to_string()));
             }
         };
@@ -94,6 +97,7 @@ pub(super) fn read(
     let after = match file.metadata() {
         Ok(m) => m,
         Err(e) => {
+            super::resources::check(&path, &e)?;
             return send(events, Event::Skip(key, path, e.to_string()));
         }
     };
