@@ -165,6 +165,7 @@ fn restore_with_hook<B: Backend>(
     for (path, error) in preflight.restore_mtimes() {
         report.failure(&path, error);
     }
+    destination.finish()?;
     report.damaged.sort_by(|a, b| {
         (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
     });

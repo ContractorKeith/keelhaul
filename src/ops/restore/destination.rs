@@ -42,6 +42,13 @@ impl Destination {
             created: Default::default(),
         })
     }
+    pub fn finish(&self) -> Result<(), Error> {
+        #[cfg(target_os = "macos")]
+        fs::fcntl_fullfsync(&self.root).map_err(os)?;
+        #[cfg(not(target_os = "macos"))]
+        fs::fsync(&self.root).map_err(os)?;
+        Ok(())
+    }
     fn directory(&self, path: &Path) -> Result<File, Error> {
         self.walk_directory(path, true)
     }

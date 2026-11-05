@@ -67,3 +67,10 @@ fn invalid_metadata_never_publishes_a_final_name() {
     assert!(temporary.publish(&entry).is_err());
     assert!(!scratch.path().join("final").exists());
 }
+
+#[test]
+fn target_directory_has_a_final_durability_barrier() {
+    let scratch = tempfile::tempdir().unwrap();
+    let destination = Destination::new(scratch.path()).unwrap();
+    destination.finish().unwrap();
+}

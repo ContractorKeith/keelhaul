@@ -34,7 +34,10 @@ pub(in crate::ops::restore) struct Temporary {
 impl Temporary {
     pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
         apply(&self.file, entry)?;
-        self.file.sync_all()?;
+        // fsync keeps per-file ordering without macOS's expensive drive-cache flush.
+        // Restore does one F_FULLFSYNC on the target directory after publication;
+        // sudden power loss before that final barrier may lose completed files.
+        fs::fsync(&self.file).map_err(os)?;
         let renamed = fs::renameat_with(
             &self.parent,
             &self.name,
@@ -56,7 +59,7 @@ impl Temporary {
             },
             || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
         )?;
-        self.parent.sync_all()?;
+        fs::fsync(&self.parent).map_err(os)?;
         let stat = fs::fstat(&self.file).map_err(os)?;
         Ok(FileIdentity::from_stat(&stat))
     }
