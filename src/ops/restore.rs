@@ -2,6 +2,7 @@
 mod destination;
 mod files;
 mod plan;
+mod resume;
 use crate::{
     backend::Backend,
     format::tree::Node,
@@ -70,7 +71,37 @@ pub fn restore_for_host_without_lock<B: Backend>(
     includes: &[PathBuf],
     host: Option<&str>,
 ) -> Result<Report, Error> {
-    restore_with_hook(repo, selector, target, includes, host, |_| {})
+    restore_with_hook(repo, selector, target, includes, host, false, |_| {})
+}
+#[derive(Default)]
+pub struct Options<'a> {
+    pub host: Option<&'a str>,
+    pub skip_identical: bool,
+    pub no_lock: bool,
+}
+pub fn restore_with_options<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    target: &Path,
+    includes: &[PathBuf],
+    options: &Options<'_>,
+) -> Result<Report, Error> {
+    let run = || {
+        restore_with_hook(
+            repo,
+            selector,
+            target,
+            includes,
+            options.host,
+            options.skip_identical,
+            |_| {},
+        )
+    };
+    if options.no_lock {
+        run()
+    } else {
+        crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| run())
+    }
 }
 fn restore_with_hook<B: Backend>(
     repo: &Repository<B>,
@@ -78,6 +109,7 @@ fn restore_with_hook<B: Backend>(
     target: &Path,
     includes: &[PathBuf],
     host: Option<&str>,
+    skip_identical: bool,
     mut before_entry: impl FnMut(&Path),
 ) -> Result<Report, Error> {
     let (snapshot_id, snapshot, damage) =
@@ -92,7 +124,22 @@ fn restore_with_hook<B: Backend>(
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)
         .map_err(|error| Error::Refused(format!("{}: {error}", target.display())))?;
-    let mut preflight = destination.preflight(&items)?;
+    let mut identical = std::collections::HashSet::new();
+    if skip_identical {
+        for item in &items {
+            if resume::identical(&destination, &store, item)? {
+                identical.insert(item.path.clone());
+            }
+        }
+    }
+    let mut preflight = destination.preflight(
+        &items
+            .iter()
+            .filter(|item| !identical.contains(&item.path))
+            .cloned()
+            .collect::<Vec<_>>(),
+    )?;
+    destination.cleanup_temps(&items)?;
     let mut hardlinks = files::Hardlinks::new();
     let mut blocked = std::collections::HashSet::new();
     for (path, error) in preflight.failed.drain(..) {
@@ -101,6 +148,10 @@ fn restore_with_hook<B: Backend>(
     }
     let mut completed = std::collections::HashSet::new();
     for item in &items {
+        if identical.contains(&item.path) {
+            destination.remember(&item.path)?;
+            continue;
+        }
         if item.path.ancestors().any(|path| blocked.contains(path)) {
             continue;
         }

@@ -237,6 +237,7 @@ fn run_inner(mut cli: Cli) -> anyhow::Result<()> {
                         snap,
                         target,
                         include,
+                        skip_identical,
                         host,
                     } = command
                     {
@@ -245,9 +246,12 @@ fn run_inner(mut cli: Cli) -> anyhow::Result<()> {
                             &snap,
                             &target,
                             &include,
-                            host.as_deref(),
+                            crate::ops::restore::Options {
+                                host: host.as_deref(),
+                                skip_identical,
+                                no_lock: cli.no_lock,
+                            },
                             cli.json,
-                            cli.no_lock,
                         )?;
                     } else if let Command::Ls { snap, path, host } = command {
                         super::audit::listing(

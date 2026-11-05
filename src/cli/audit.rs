@@ -29,15 +29,10 @@ pub(super) fn restore<B: crate::backend::Backend>(
     snap: &str,
     target: &std::path::Path,
     includes: &[std::path::PathBuf],
-    host: Option<&str>,
+    options: crate::ops::restore::Options<'_>,
     json: bool,
-    no_lock: bool,
 ) -> anyhow::Result<()> {
-    let result = if no_lock {
-        crate::ops::restore::restore_for_host_without_lock(repo, snap, target, includes, host)
-    } else {
-        crate::ops::restore::restore_for_host(repo, snap, target, includes, host)
-    };
+    let result = crate::ops::restore::restore_with_options(repo, snap, target, includes, &options);
     let report = match result {
         Ok(report) => report,
         Err(error) => return restore_failure(error, json),

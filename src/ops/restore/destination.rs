@@ -1,6 +1,7 @@
 //! Descriptor-relative writes: every ancestor is opened with O_NOFOLLOW.
 mod preflight;
 mod publication;
+mod resume;
 use crate::{format::tree::Entry, repo::Error};
 pub(super) use publication::Temporary;
 use rustix::fs::{self, AtFlags, Gid, Mode, OFlags, Timespec, Timestamps, Uid};

@@ -14,7 +14,7 @@ fn per_item_conflict_continues_and_directory_metadata_is_applied() {
     let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([1; 32])).unwrap();
     backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
     let target = root.join("out");
-    let report = restore_with_hook(&repo, "latest", &target, &[], None, |path| {
+    let report = restore_with_hook(&repo, "latest", &target, &[], None, false, |path| {
         if path.file_name() == Some(std::ffi::OsStr::new("b")) {
             std::fs::write(target.join(path), "existing").unwrap();
         }

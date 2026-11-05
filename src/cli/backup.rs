@@ -86,6 +86,7 @@ pub(super) fn run<B: Backend>(
             target,
             include,
             host,
+            ..
         } => {
             let report = match ops::restore::restore_for_host(
                 repo,

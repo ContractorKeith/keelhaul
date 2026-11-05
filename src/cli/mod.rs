@@ -117,6 +117,9 @@ pub(super) enum Command {
         target: PathBuf,
         #[arg(long)]
         include: Vec<PathBuf>,
+        /// Skip existing regular files whose bytes match the snapshot.
+        #[arg(long)]
+        skip_identical: bool,
         #[arg(long)]
         host: Option<String>,
     },

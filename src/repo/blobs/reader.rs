@@ -1,6 +1,9 @@
 //! Authenticated ranged reads and complete index/header agreement.
 use super::*;
 impl<B: Backend> BlobStore<'_, B> {
+    pub(crate) fn chunk_id_key(&self) -> [u8; 32] {
+        self.repo.subkeys().chunk_id
+    }
     pub(crate) fn indexed_blobs_exist(
         &self,
         expected: &HashSet<(BlobKind, String)>,
