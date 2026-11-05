@@ -249,7 +249,8 @@ Only the last replacement object supersedes all old names, including unreadable 
 the other replacement objects remain live.
 
 Backup writes an index object after every 8 packs or 5 minutes, whichever comes first, and
-one at the end. Only these flushed indexes count for a rerun after a crash (§13).
+one at the end. These flushed indexes provide the fast path for a rerun after a crash
+(§13); packs without readable live-index coverage can be recovered from their headers.
 
 ## 9. Tree
 

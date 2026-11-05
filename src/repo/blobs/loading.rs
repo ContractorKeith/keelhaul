@@ -76,8 +76,5 @@ pub(super) fn load<B: Backend>(repo: &Repository<B>) -> Result<Loaded, Error> {
             headers.insert(id.into(), (entry.name.to_string(), header.blobs));
         }
     }
-    for item in &report.damage {
-        eprintln!("warning: {item}");
-    }
     Ok((index, headers, report.damage))
 }

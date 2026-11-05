@@ -88,3 +88,49 @@ fn nested_audit_damage_displays_its_object_and_cause_once() {
         "damage: snapshots/abc: bad-format: unreadable snapshot"
     );
 }
+
+#[test]
+fn damaged_indexes_report_once_after_restore_and_listing_output() {
+    let scratch = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(scratch.path()).unwrap();
+    fs::write(root.join("key"), [7; 32]).unwrap();
+    let source = root.join("file");
+    fs::write(&source, b"recoverable").unwrap();
+    assert!(run(&root, &["init"]).status.success());
+    assert!(
+        run(&root, &["backup", source.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let index = fs::read_dir(root.join("repo/index"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut bytes = fs::read(&index).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    fs::write(&index, bytes).unwrap();
+    let out = root.join("out");
+    for result in [
+        run(
+            &root,
+            &["restore", "latest", "--target", out.to_str().unwrap()],
+        ),
+        run(&root, &["ls", "latest", "--json"]),
+    ] {
+        assert_eq!(result.status.code(), Some(3), "{result:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&result.stderr)
+                .matches(index.file_name().unwrap().to_str().unwrap())
+                .count(),
+            1,
+            "{result:?}"
+        );
+        assert!(!result.stdout.is_empty());
+    }
+    assert_eq!(
+        fs::read(out.join(source.strip_prefix("/").unwrap())).unwrap(),
+        b"recoverable"
+    );
+}

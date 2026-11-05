@@ -56,3 +56,35 @@ pub(super) fn restore<B: crate::backend::Backend>(
     }
     Ok(())
 }
+
+pub(super) fn listing<B: crate::backend::Backend>(
+    repo: &crate::repo::Repository<B>,
+    selector: &str,
+    filter: Option<&std::path::Path>,
+    host: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let report = crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?;
+    if json {
+        println!("{}", serde_json::to_string(&report.entries)?);
+    } else {
+        for entry in &report.entries {
+            println!(
+                "{}{}",
+                entry.path,
+                if entry.shared {
+                    " [shared subtree]"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+    for damage in &report.damage {
+        eprintln!("{damage}");
+    }
+    if !report.damage.is_empty() {
+        super::backup::completed_damage()?;
+    }
+    Ok(())
+}

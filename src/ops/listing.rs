@@ -39,6 +39,22 @@ pub fn ls_for_host<B: Backend>(
     filter: Option<&Path>,
     host: Option<&str>,
 ) -> Result<Vec<Listed>, Error> {
+    let report = ls_report_for_host(repo, selector, filter, host)?;
+    for damage in &report.damage {
+        eprintln!("warning: {damage}");
+    }
+    Ok(report.entries)
+}
+pub struct ListingReport {
+    pub entries: Vec<Listed>,
+    pub damage: Vec<crate::damage::Damage>,
+}
+pub fn ls_report_for_host<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    filter: Option<&Path>,
+    host: Option<&str>,
+) -> Result<ListingReport, Error> {
     crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
         ls_for_host_locked(repo, selector, filter, host)
     })
@@ -48,9 +64,9 @@ fn ls_for_host_locked<B: Backend>(
     selector: &str,
     filter: Option<&Path>,
     host: Option<&str>,
-) -> Result<Vec<Listed>, Error> {
+) -> Result<ListingReport, Error> {
     let (_, snapshot) = select_snapshot_for_host(repo, selector, host)?;
-    let mut store = BlobStore::load(repo)?;
+    let mut store = BlobStore::load_quiet(repo)?;
     let mut output = Vec::new();
     let filter = filter
         .map(|path| {
@@ -75,7 +91,10 @@ fn ls_for_host_locked<B: Backend>(
             filter.display()
         )));
     }
-    Ok(output)
+    Ok(ListingReport {
+        entries: output,
+        damage: store.damage,
+    })
 }
 enum Work {
     Tree(String, PathBuf, bool),

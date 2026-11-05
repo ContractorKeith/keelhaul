@@ -201,6 +201,14 @@ pub fn run(mut cli: Cli) -> anyhow::Result<()> {
                             host.as_deref(),
                             cli.json,
                         )?;
+                    } else if let Command::Ls { snap, path, host } = command {
+                        super::audit::listing(
+                            &repo,
+                            &snap,
+                            path.as_deref(),
+                            host.as_deref(),
+                            cli.json,
+                        )?;
                     } else {
                         super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
                     }

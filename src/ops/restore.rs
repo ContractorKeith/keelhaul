@@ -79,7 +79,7 @@ fn restore_with_hook<B: Backend>(
     mut before_entry: impl FnMut(&Path),
 ) -> Result<Report, Error> {
     let (snapshot_id, snapshot) = super::listing::select_snapshot_for_host(repo, selector, host)?;
-    let mut store = BlobStore::load(repo)?;
+    let mut store = BlobStore::load_quiet(repo)?;
     let mut report = Report {
         damaged: store.damage.clone(),
         ..Report::default()
