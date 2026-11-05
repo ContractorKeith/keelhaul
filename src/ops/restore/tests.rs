@@ -22,14 +22,7 @@ fn per_item_conflict_continues_and_directory_metadata_is_applied() {
     .unwrap();
     assert!(report.damaged.is_empty());
     assert_eq!(report.failed.len(), 1);
-    assert_eq!(
-        report.failed[0].path,
-        source
-            .strip_prefix("/")
-            .unwrap()
-            .join("b")
-            .to_string_lossy()
-    );
+    assert_eq!(report.failed[0].path, source.join("b").to_string_lossy());
     let restored = target.join(source.strip_prefix("/").unwrap());
     assert_eq!(std::fs::read(restored.join("z")).unwrap(), b"z");
     assert_eq!(std::fs::read(restored.join("b")).unwrap(), b"existing");

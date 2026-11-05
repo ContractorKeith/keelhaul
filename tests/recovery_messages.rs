@@ -75,3 +75,16 @@ fn missing_repository_is_usage() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2), "{output:?}");
 }
+
+#[test]
+fn nested_audit_damage_displays_its_object_and_cause_once() {
+    let error = keelhaul::repo::Error::Damage {
+        object: "snapshots/abc".into(),
+        problem: "bad-format",
+        detail: "snapshots/abc: bad-format: unreadable snapshot".into(),
+    };
+    assert_eq!(
+        error.to_string(),
+        "damage: snapshots/abc: bad-format: unreadable snapshot"
+    );
+}

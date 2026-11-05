@@ -23,7 +23,7 @@ pub enum Error {
         total: usize,
         objects: String,
     },
-    #[error("damage: {object}: {problem}: {detail}")]
+    #[error("damage: {object}: {problem}: {}", damage_detail(.object, .problem, .detail))]
     Damage {
         object: String,
         problem: &'static str,
@@ -247,4 +247,14 @@ mod tests {
             }
         }
     }
+}
+
+// Wrapping a collected audit finding must not repeat its object and cause.
+fn damage_detail<'a>(object: &str, problem: &str, detail: &'a str) -> &'a str {
+    let detail = detail
+        .strip_prefix(&format!("{object}: "))
+        .unwrap_or(detail);
+    detail
+        .strip_prefix(&format!("{problem}: "))
+        .unwrap_or(detail)
 }
