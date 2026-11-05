@@ -45,6 +45,29 @@ fn every_happy_command_is_quiet_but_damage_and_json_survive() {
             "{args:?}: {out:?}"
         );
     }
+    let second = dir.path().join("second-key");
+    let added = run(
+        &repo,
+        &key,
+        &["key", "add", "--new-key-file", second.to_str().unwrap()],
+    );
+    assert!(added.status.success() && added.stdout.is_empty() && added.stderr.is_empty());
+    let slots = run(&repo, &key, &["--json", "key", "list"]);
+    let slots: serde_json::Value = serde_json::from_slice(&slots.stdout).unwrap();
+    let id = slots["slots"][0]["id"].as_str().unwrap();
+    let removed = run(&repo, &key, &["key", "remove", id]);
+    assert!(removed.status.success() && removed.stdout.is_empty() && removed.stderr.is_empty());
+    // Continue with whichever secret remains after removing a slot in sorted order.
+    let key = if run(&repo, &key, &["snapshots"]).status.success() {
+        key
+    } else {
+        second
+    };
+    let unreadable = repo.join("keys").join("ff".repeat(32));
+    std::fs::write(&unreadable, b"invalid slot").unwrap();
+    let listed = run(&repo, &key, &["key", "list"]);
+    assert!(String::from_utf8_lossy(&listed.stderr).contains("unreadable key slot"));
+    std::fs::remove_file(unreadable).unwrap();
     let conflict = run(
         &repo,
         &key,
