@@ -126,7 +126,7 @@ fn keyed_hash_mismatch_is_damage_even_with_valid_aead() {
     ));
 }
 #[test]
-fn superseded_index_is_not_live() {
+fn superseded_index_is_not_live_but_pack_headers_remain_recoverable() {
     let repo = repo();
     let mut store = BlobStore::load(&repo).unwrap();
     let id = store.add(BlobKind::Data, b"hello").unwrap();
@@ -139,17 +139,17 @@ fn superseded_index_is_not_live() {
     )
     .unwrap();
     let mut store = BlobStore::load(&repo).unwrap();
-    assert!(store.read(BlobKind::Data, &id).is_err());
+    assert_eq!(store.read(BlobKind::Data, &id).unwrap(), b"hello");
 }
 #[test]
 fn missing_snapshot_and_bad_index_are_damage() {
     let repo = repo();
     let name = ObjectName::new(&format!("index/{}", "ab".repeat(32))).unwrap();
     repo.backend.write(&name, b"invalid").unwrap();
-    assert!(matches!(
-        BlobStore::load(&repo),
-        Err(keelhaul::repo::Error::Damage { .. })
-    ));
+    let store = BlobStore::load(&repo).unwrap();
+    assert_eq!(store.damage.len(), 1);
+    assert_eq!(store.damage[0].object, name.as_str());
+    assert_eq!(store.damage[0].problem, "hash-mismatch");
     assert!(Tree::parse(br#"{"version":1,"entries":[]}"#).is_ok());
 }
 

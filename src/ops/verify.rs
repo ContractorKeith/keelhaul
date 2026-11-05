@@ -53,6 +53,15 @@ pub fn verify_backend<B: Backend>(
         run(State::new(backend, master.subkeys()), subset, damage)
     })
 }
+/// Audit read-only storage without acquiring a repository lock.
+pub fn verify_backend_without_lock<B: Backend>(
+    backend: &B,
+    secret: &Secret,
+    subset: Option<Subset>,
+) -> Result<Report, Error> {
+    let master = Repository::unlock(backend, secret)?;
+    run(State::new(backend, master.subkeys()), subset, Vec::new())
+}
 fn run<B: Backend>(
     mut state: State<'_, B>,
     subset: Option<Subset>,

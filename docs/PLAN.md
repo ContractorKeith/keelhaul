@@ -58,7 +58,7 @@ completes.
 | 17 | `prune` with repack, SIGKILL loop for prune | v1 | M5 | SPEC §14 |
 | 18 | S3-compatible backend (rusty-s3 + ureq), versitygw e2e | v1 | M6 | AWS_* env credentials; create-once is exact only on servers with conditional PUT; otherwise concurrent `init` of one repo is unsafe |
 | 19 | SFTP backend over system `ssh -s sftp`, own SFTP v3 client, sshd e2e | v1 | M7 | honours `~/.ssh/config` |
-| 20 | `--json` on every command, exit codes 0/1/2/3/4 | v1 | M0–M5 | each milestone for its commands |
+| 20 | `--json` on every command, exit codes 0/1/2/3/4/5 | v1 | M0–M5 | each milestone for its commands |
 | 21 | Release binaries (linux x64/arm64, macOS arm64), Homebrew formula, crates.io | v1 | M8 | |
 | 22 | TUI (ratatui) | Later | | explicitly cut from v1 |
 | 23 | xattrs, ACLs, macOS resource forks | Later | | tree reserves `xattrs` |
@@ -152,6 +152,7 @@ keelhaul forget [<snap>...] [--keep-last N] [--keep-hourly N] [--keep-daily N]
                 [--keep-weekly N] [--keep-monthly N] [--keep-yearly N] [--keep-tag T]...
                 [--group-by host,paths] [--dry-run] [--prune]
 keelhaul prune [--max-unused PCT] [--dry-run]
+keelhaul rebuild-index [--dry-run]
 keelhaul unlock
 keelhaul version
 ```
@@ -168,7 +169,9 @@ name is too short, rather than routing through an endpoint path `/s3`. Secrets c
 `KEELHAUL_KEY_FILE`, or a TTY prompt. Never from argv. S3 credentials come from
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`. Other flags:
 `--json`, `-q/--quiet`, `-v/--verbose`, `--jobs N` (default 4). Precedence: flag > env >
-prompt.
+prompt. `--no-lock` skips lock acquisition for snapshots, ls, restore, check and verify,
+with one stderr warning. Other commands reject it with exit 2. Exclude concurrent writers
+while using this mode; audits still examine stored locks.
 
 Output: human text on stdout, progress on stderr only when stderr is a TTY. `--json` prints
 one JSON document on stdout and nothing else there; its shape per command is pinned by
@@ -183,9 +186,18 @@ golden tests. Damage list (check, verify, restore):
 `bad-header`, `index-mismatch`, `dangling-reference`, `size-mismatch`, plus notes `orphan`,
 `unknown-object`, `unused-index`.
 
-Exit codes: 0 ok · 1 error (I/O, wrong password, refused operation) · 2 usage · 3 damage
-found (check, verify, restore, prune, snapshots) · 4 repository locked · 5 snapshot
-written; entries skipped (incomplete backup).
+| Exit | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | I/O, wrong password, or refused operation |
+| 2 | Invalid usage |
+| 3 | Repository damage found |
+| 4 | Repository locked |
+| 5 | Backup wrote a snapshot but could not read required source entries |
+
+Exit 5 is backup-only. Read-only commands and `rebuild-index` return 0 on success,
+including when reading an incomplete snapshot. Expected exclusions such as unsupported
+file types do not make a backup incomplete; errors and damage keep their own codes.
 
 ## 7. Milestones
 

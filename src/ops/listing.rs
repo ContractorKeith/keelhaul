@@ -39,18 +39,35 @@ pub fn ls_for_host<B: Backend>(
     filter: Option<&Path>,
     host: Option<&str>,
 ) -> Result<Vec<Listed>, Error> {
-    crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
-        ls_for_host_locked(repo, selector, filter, host)
-    })
+    let report = ls_report_for_host(repo, selector, filter, host)?;
+    for damage in &report.damage {
+        eprintln!("warning: {damage}");
+    }
+    Ok(report.entries)
 }
-fn ls_for_host_locked<B: Backend>(
+pub struct ListingReport {
+    pub entries: Vec<Listed>,
+    pub damage: Vec<crate::damage::Damage>,
+}
+pub fn ls_report_for_host<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
     filter: Option<&Path>,
     host: Option<&str>,
-) -> Result<Vec<Listed>, Error> {
-    let (_, snapshot) = repo.select_snapshot_for_host(selector, host)?;
-    let mut store = BlobStore::load(repo)?;
+) -> Result<ListingReport, Error> {
+    crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
+        ls_report_for_host_without_lock(repo, selector, filter, host)
+    })
+}
+/// Read without a repository lock; callers must exclude concurrent writers.
+pub fn ls_report_for_host_without_lock<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    filter: Option<&Path>,
+    host: Option<&str>,
+) -> Result<ListingReport, Error> {
+    let (_, snapshot) = select_snapshot_for_host(repo, selector, host)?;
+    let mut store = BlobStore::load_quiet(repo)?;
     let mut output = Vec::new();
     let filter = filter
         .map(|path| {
@@ -75,7 +92,10 @@ fn ls_for_host_locked<B: Backend>(
             filter.display()
         )));
     }
-    Ok(output)
+    Ok(ListingReport {
+        entries: output,
+        damage: store.damage,
+    })
 }
 enum Work {
     Tree(String, PathBuf, bool),
@@ -184,4 +204,57 @@ pub(super) fn damage(object: &str, detail: &str) -> Error {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+// Readers retain damage when no authenticated snapshot can satisfy `latest`.
+pub(super) fn select_snapshot_for_host<B: Backend>(
+    repo: &Repository<B>,
+    selector: &str,
+    host: Option<&str>,
+) -> Result<(String, crate::format::snapshot::Snapshot), Error> {
+    if selector != "latest" {
+        return repo.select_snapshot_for_host(selector, host);
+    }
+    let scanned = repo.scan_snapshots()?;
+    let local = crate::host::hostname();
+    let host = host.unwrap_or(&local);
+    if let Some(found) = scanned.entries.iter().rev().find(|(_, s)| s.host == host) {
+        return Ok(found.clone());
+    }
+    let readable = scanned.entries.len();
+    let mut hosts = std::collections::BTreeMap::new();
+    for (_, snapshot) in &scanned.entries {
+        *hosts.entry(snapshot.host.as_str()).or_insert(0usize) += 1;
+    }
+    let hosts = hosts
+        .iter()
+        .map(|(host, count)| format!("{host} ({count})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let damaged = repo
+        .backend
+        .list(crate::backend::Kind::Snapshots)?
+        .into_iter()
+        .filter(|entry| {
+            !scanned
+                .entries
+                .iter()
+                .any(|(id, _)| id == &entry.name.as_str()[10..])
+        })
+        .map(|entry| entry.name.to_string())
+        .collect::<Vec<_>>();
+    let message = format!(
+        "no snapshots for host {host}; hosts present: {}; {readable} readable snapshots, {} damaged snapshots",
+        if hosts.is_empty() { "none" } else { &hosts },
+        damaged.len()
+    );
+    if damaged.is_empty() {
+        Err(Error::Refused(message))
+    } else {
+        Err(Error::Damage {
+            object: damaged.join(", "),
+            problem: "bad-format",
+            detail: message,
+        })
+    }
 }

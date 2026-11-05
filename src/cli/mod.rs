@@ -5,7 +5,9 @@ macro_rules! println {
 mod audit;
 mod backup;
 mod commands;
+mod readers;
 mod repo;
+mod secrets;
 
 use clap::{Parser, Subcommand};
 pub use commands::run;
@@ -27,25 +29,22 @@ pub struct Cli {
     /// KEELHAUL_S3_DEADLINE_SECS bounds an operation across retries (default 120). Both accept 1–3600 seconds.
     #[arg(short = 'r', long, env = "KEELHAUL_REPO", global = true)]
     repo: Option<String>,
-    #[arg(
-        long,
-        env = "KEELHAUL_PASSWORD_FILE",
-        hide_env_values = true,
-        global = true
-    )]
+    #[arg(long, hide_env_values = true, global = true)]
     password_file: Option<PathBuf>,
     #[arg(
         long,
-        env = "KEELHAUL_PASSWORD_COMMAND",
         help = "Read password from sh -c COMMAND (stdout at most 1 MiB); command arguments are visible in ps",
         hide_env_values = true,
         global = true
     )]
     password_command: Option<String>,
-    #[arg(long, env = "KEELHAUL_KEY_FILE", hide_env_values = true, global = true)]
+    #[arg(long, hide_env_values = true, global = true)]
     key_file: Option<PathBuf>,
     #[arg(long, global = true)]
     pub json: bool,
+    /// Skip repository locking for snapshots, ls, restore, check, and verify.
+    #[arg(long, global = true)]
+    no_lock: bool,
     #[arg(short, long, global = true)]
     quiet: bool,
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
@@ -132,6 +131,11 @@ pub(super) enum Command {
     },
     #[command(about = "Remove stale or dead repository locks")]
     Unlock,
+    /// Rebuild cached indexes from every pack header.
+    RebuildIndex {
+        #[arg(long)]
+        dry_run: bool,
+    },
     #[command(about = "Create an encrypted repository")]
     Init,
     #[command(about = "Manage repository key slots")]

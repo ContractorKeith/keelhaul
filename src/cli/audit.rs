@@ -18,7 +18,7 @@ pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
             })?
         );
     } else {
-        println!("{damage}");
+        eprintln!("{damage}");
     }
     super::backup::completed_damage()?;
     Ok(())
@@ -31,8 +31,14 @@ pub(super) fn restore<B: crate::backend::Backend>(
     includes: &[std::path::PathBuf],
     host: Option<&str>,
     json: bool,
+    no_lock: bool,
 ) -> anyhow::Result<()> {
-    let report = match crate::ops::restore::restore_for_host(repo, snap, target, includes, host) {
+    let result = if no_lock {
+        crate::ops::restore::restore_for_host_without_lock(repo, snap, target, includes, host)
+    } else {
+        crate::ops::restore::restore_for_host(repo, snap, target, includes, host)
+    };
+    let report = match result {
         Ok(report) => report,
         Err(error) => return restore_failure(error, json),
     };
@@ -41,10 +47,10 @@ pub(super) fn restore<B: crate::backend::Backend>(
     } else {
         println!("restored {} entries", report.restored);
         for damage in &report.damaged {
-            println!("{damage}");
+            eprintln!("{damage}");
         }
         for failure in &report.failed {
-            println!("{}: {}", failure.path, failure.error);
+            eprintln!("{}: {}", failure.path, failure.error);
         }
     }
     if !report.damaged.is_empty() {
@@ -53,6 +59,43 @@ pub(super) fn restore<B: crate::backend::Backend>(
     if !report.failed.is_empty() {
         // Report already rendered; avoid emitting a second JSON document.
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+pub(super) fn listing<B: crate::backend::Backend>(
+    repo: &crate::repo::Repository<B>,
+    selector: &str,
+    filter: Option<&std::path::Path>,
+    host: Option<&str>,
+    json: bool,
+    no_lock: bool,
+) -> anyhow::Result<()> {
+    let report = if no_lock {
+        crate::ops::listing::ls_report_for_host_without_lock(repo, selector, filter, host)?
+    } else {
+        crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?
+    };
+    if json {
+        println!("{}", serde_json::to_string(&report.entries)?);
+    } else {
+        for entry in &report.entries {
+            println!(
+                "{}{}",
+                entry.path,
+                if entry.shared {
+                    " [shared subtree]"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+    for damage in &report.damage {
+        eprintln!("{damage}");
+    }
+    if !report.damage.is_empty() {
+        super::backup::completed_damage()?;
     }
     Ok(())
 }

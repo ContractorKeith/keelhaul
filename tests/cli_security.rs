@@ -88,12 +88,12 @@ fn wrong_password_unreadable_slot_and_unknown_id_have_useful_errors() {
         .unwrap()
         .path();
     fs::write(&slot, b"{").unwrap();
-    let v = assert_json_error(run(&["key", "list", "--json"]), 1);
-    let expected = format!(
-        "no key slot matches (1 of 1 slots unreadable: keys/{})",
-        slot.file_name().unwrap().to_str().unwrap()
-    );
-    assert!(v["error"]["message"].as_str().unwrap().contains(&expected));
+    let v = assert_json_error(run(&["key", "list", "--json"]), 3);
+    let expected = format!("keys/{}", slot.file_name().unwrap().to_str().unwrap());
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains(&expected));
+    assert!(message.contains("bad-format"));
+    assert!(!message.contains("wrong secret"));
 }
 
 #[test]

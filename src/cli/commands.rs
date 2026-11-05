@@ -1,14 +1,31 @@
 use super::{Cli, Command, KeyCommand};
 use crate::output;
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
+pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+    if cli.no_lock {
+        if !matches!(
+            cli.command,
+            Command::Snapshots { .. }
+                | Command::Ls { .. }
+                | Command::Restore { .. }
+                | Command::Check
+                | Command::Verify { .. }
+        ) {
+            return Err(crate::repo::Error::Usage(
+                "--no-lock is only allowed for snapshots, ls, restore, check, and verify".into(),
+            )
+            .into());
+        }
+        eprintln!("warning: --no-lock skips repository locking; exclude concurrent writers");
+    }
+    super::secrets::resolve(&mut cli);
     match cli.command {
         Command::Version => output::version(output::stdout(), cli.json)?,
         command => {
             use crate::{repo::Repository, secret};
             let path = cli
                 .repo
-                .ok_or_else(|| anyhow::anyhow!("--repo is required"))?;
+                .ok_or_else(|| crate::repo::Error::Usage("--repo is required".into()))?;
             let initializing = matches!(command, Command::Init);
             let backend = super::repo::select(&path, initializing, cli.verbose > 0)?;
             #[cfg(feature = "fault-injection")]
@@ -41,7 +58,15 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                 }
                 Command::Check | Command::Verify { .. } => {
                     let report = match command {
+                        Command::Check if cli.no_lock => {
+                            crate::ops::check::check_backend_without_lock(&backend, &secret)?
+                        }
                         Command::Check => crate::ops::check::check_backend(&backend, &secret)?,
+                        Command::Verify { subset } if cli.no_lock => {
+                            crate::ops::verify::verify_backend_without_lock(
+                                &backend, &secret, subset,
+                            )?
+                        }
                         Command::Verify { subset } => {
                             crate::ops::verify::verify_backend(&backend, &secret, subset)?
                         }
@@ -73,7 +98,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     options.validate()?;
                     let repo = Repository::open(backend, &secret)?;
                     let report = crate::ops::forget::forget(&repo, options)?;
-                    let text = report
+                    let mut text = report
                         .groups
                         .iter()
                         .flat_map(|g| {
@@ -84,6 +109,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
+                    if let Some(summary) = &report.prune {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(&format!(
+                            "{} packs removed, {} repacked, {} bytes freed{}",
+                            summary.packs_removed,
+                            summary.packs_repacked,
+                            summary.bytes_freed,
+                            if options.dry_run { " (dry run)" } else { "" }
+                        ));
+                    }
                     (serde_json::to_value(report)?, text)
                 }
                 Command::Prune {
@@ -102,6 +139,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     for warning in &summary.warnings {
                         text.push_str(&format!("\nwarning: {warning}"));
                     }
+                    (serde_json::to_value(summary)?, text)
+                }
+                Command::RebuildIndex { dry_run } => {
+                    let repo = Repository::open(backend, &secret)?;
+                    let summary = crate::ops::rebuild_index::rebuild(&repo, dry_run)?;
+                    let text = format!(
+                        "{} packs indexed, {} indexes written, {} old indexes removed{}",
+                        summary.packs,
+                        summary.indexes_written,
+                        summary.indexes_removed,
+                        if dry_run { " (dry run)" } else { "" }
+                    );
                     (serde_json::to_value(summary)?, text)
                 }
                 Command::Unlock => {
@@ -175,7 +224,19 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                             &include,
                             host.as_deref(),
                             cli.json,
+                            cli.no_lock,
                         )?;
+                    } else if let Command::Ls { snap, path, host } = command {
+                        super::audit::listing(
+                            &repo,
+                            &snap,
+                            path.as_deref(),
+                            host.as_deref(),
+                            cli.json,
+                            cli.no_lock,
+                        )?;
+                    } else if let Command::Snapshots { host, tag, path } = command {
+                        super::readers::snapshots(&repo, host, tag, path, cli.json, cli.no_lock)?;
                     } else {
                         super::backup::run(&repo, command, cli.json, cli.jobs as usize)?;
                     }

@@ -20,7 +20,7 @@ use keelhaul::{
     secret::Secret,
 };
 #[test]
-fn subset_does_not_condemn_a_file_with_an_untested_copy_and_orphans_do_not_hide_damage() {
+fn subsets_and_recovered_orphans_preserve_physical_damage_without_condemning_healthy_files() {
     let secret = Secret::KeyFile([7; 32]);
     let repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
     let source = tempfile::tempdir().unwrap();
@@ -54,13 +54,24 @@ fn subset_does_not_condemn_a_file_with_an_untested_copy_and_orphans_do_not_hide_
     let mut bytes = repo.backend.read(&corrupt).unwrap();
     bytes[loc.blob.offset as usize + 24] ^= 1;
     repo.backend.plant_raw(corrupt.as_str(), &bytes).unwrap();
-    // An orphan's good blob is not a usable live-index location.
+    // Header recovery makes the orphan copy usable, while physical damage to
+    // the original pack/blob must still be reported independently.
+    let report = verify(&repo, None).unwrap();
+    assert!(!report.damage.iter().any(|d| d.kind == "file"));
+    assert!(report.damage.iter().any(|d| d.object == loc.blob.id));
     assert!(
-        verify(&repo, None)
-            .unwrap()
+        report
             .damage
             .iter()
-            .any(|d| d.kind == "file")
+            .any(|d| d.object == corrupt.as_str() && d.problem == "hash-mismatch")
+    );
+    let mut recovered = BlobStore::load(&repo).unwrap();
+    recovered
+        .index
+        .insert((BlobKind::Data, loc.blob.id.clone()), loc.clone());
+    assert_eq!(
+        recovered.read(BlobKind::Data, &loc.blob.id).unwrap(),
+        b"hello"
     );
     let index = repo
         .write_object(

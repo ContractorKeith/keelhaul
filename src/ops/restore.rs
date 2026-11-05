@@ -16,7 +16,7 @@ pub struct Report {
     pub damaged: Vec<crate::damage::Damage>,
     pub failed: Vec<Failure>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Failure {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,6 +27,7 @@ impl Report {
     fn failure(&mut self, path: &Path, error: Error) {
         use base64::Engine;
         use std::os::unix::ffi::OsStrExt;
+        let path = Path::new("/").join(path);
         self.failed.push(Failure {
             path: path.to_string_lossy().into_owned(),
             path_b64: path
@@ -57,10 +58,11 @@ pub fn restore_for_host<B: Backend>(
     host: Option<&str>,
 ) -> Result<Report, Error> {
     crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
-        restore_for_host_locked(repo, selector, target, includes, host)
+        restore_for_host_without_lock(repo, selector, target, includes, host)
     })
 }
-fn restore_for_host_locked<B: Backend>(
+/// Read without a repository lock; callers must exclude concurrent writers.
+pub fn restore_for_host_without_lock<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
     target: &Path,
@@ -77,9 +79,12 @@ fn restore_with_hook<B: Backend>(
     host: Option<&str>,
     mut before_entry: impl FnMut(&Path),
 ) -> Result<Report, Error> {
-    let (snapshot_id, snapshot) = repo.select_snapshot_for_host(selector, host)?;
-    let mut store = BlobStore::load(repo)?;
-    let mut report = Report::default();
+    let (snapshot_id, snapshot) = super::listing::select_snapshot_for_host(repo, selector, host)?;
+    let mut store = BlobStore::load_quiet(repo)?;
+    let mut report = Report {
+        damaged: store.damage.clone(),
+        ..Report::default()
+    };
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)
         .map_err(|error| Error::Refused(format!("{}: {error}", target.display())))?;
@@ -161,10 +166,13 @@ fn restore_with_hook<B: Backend>(
     for (path, error) in preflight.restore_mtimes() {
         report.failure(&path, error);
     }
+    destination.finish()?;
     report.damaged.sort_by(|a, b| {
         (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
     });
     report.damaged.dedup();
+    report.failed.sort();
+    report.failed.dedup();
     Ok(report)
 }
 

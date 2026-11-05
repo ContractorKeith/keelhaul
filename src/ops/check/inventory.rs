@@ -127,12 +127,28 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
                         "indexed pack is missing",
                     );
                 }
-                Some(Some(header)) if header.blobs != pack.blobs => state.report.add(
-                    name,
-                    "index",
-                    "index-mismatch",
-                    "index differs from complete pack header",
-                ),
+                Some(Some(header)) if header.blobs != pack.blobs => {
+                    state.report.add(
+                        name,
+                        "index",
+                        "index-mismatch",
+                        "index differs from complete pack header",
+                    );
+                    // A swapped pack has an authentic header but the wrong name.
+                    // Only mismatches need a full read during a structural check.
+                    let object = crate::repo::blobs::pack_name(&pack.id)?;
+                    if let Some(bytes) =
+                        state.report.collect(audit::read(state.backend, &object))?
+                        && blake3::hash(&bytes).to_hex().as_str() != pack.id
+                    {
+                        state.report.add(
+                            object.as_str(),
+                            "pack",
+                            "hash-mismatch",
+                            "stored pack ID differs",
+                        );
+                    }
+                }
                 _ => {}
             }
             // Keep indexed descriptors even when headers are damaged: other trees
@@ -177,6 +193,15 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
     }
     for id in state.packs.keys() {
         if !named.contains(id) {
+            if let Some(Some(header)) = state.packs.get(id) {
+                for blob in &header.blobs {
+                    state
+                        .live
+                        .entry((blob.kind, blob.id.clone()))
+                        .or_default()
+                        .push((id.clone(), blob.clone()));
+                }
+            }
             state.report.note(
                 crate::repo::blobs::pack_name(id)?.as_str(),
                 "pack",

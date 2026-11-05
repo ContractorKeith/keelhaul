@@ -10,10 +10,7 @@ use keelhaul::{
         restore::restore,
         verify::verify,
     },
-    repo::{
-        Repository,
-        blobs::{BlobStore, pack_name},
-    },
+    repo::{Repository, blobs::BlobStore},
     secret::Secret,
 };
 use std::collections::HashSet;
@@ -86,6 +83,13 @@ fn young_orphan_survives_old_orphan_and_temp_are_deleted() {
         .into_iter()
         .map(|e| e.name)
         .collect::<HashSet<_>>();
+    let old_packs = repo
+        .backend
+        .list(Kind::Data)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<HashSet<_>>();
     let mut writer = BlobStore::load(&repo).unwrap();
     writer
         .add(BlobKind::Data, b"unreferenced young data")
@@ -101,13 +105,7 @@ fn young_orphan_survives_old_orphan_and_temp_are_deleted() {
         .list(Kind::Data)
         .unwrap()
         .into_iter()
-        .find(|e| {
-            !BlobStore::load(&repo)
-                .unwrap()
-                .index
-                .values()
-                .any(|l| pack_name(&l.pack).unwrap() == e.name)
-        })
+        .find(|entry| !old_packs.contains(&entry.name))
         .unwrap();
     prune(&repo, 40, false).unwrap();
     assert!(repo.backend.stat(&orphan.name).is_ok());

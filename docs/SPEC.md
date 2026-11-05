@@ -89,7 +89,9 @@ A key slot is a plaintext JSON object at `keys/<random id>`:
 plaintext exactly the 32-byte master key (no compression byte). Opening a repository tries
 the supplied secret against every slot. Exactly one secret is supplied per command. Each
 slot is tried in name order until one unwraps and `config` decrypts with the resulting
-master key. If no slot unwraps, this is a wrong-password error (exit 1), not damage.
+master key. If no slot unwraps and every slot is parseable, this is a wrong-password error
+(exit 1), not damage. If no slot opens and any slots are unparseable, report damage
+(exit 3) naming those slots.
 If a slot unwraps but none authenticates `config`, report the config failure.
 
 `check` lets anyone holding the master key detect damage in slots they cannot unlock. It is
@@ -98,8 +100,11 @@ the BLAKE3 keyed hash (key = key-slot check subkey) of these bytes concatenated:
 salt, and finally the decoded `wrapped` bytes. A reader that opened the repository through
 another slot MUST recompute `check` for every slot and report a mismatch as damage of that
 slot. A reader unlocking through a slot verifies its `check` after unwrapping.
+A check mismatch is damage of that slot: warn, but allow opening when its unwrapped
+master key authenticates `config`. `check` and `verify` report the mismatch as damage.
 
-Removing the last slot is refused. A repository never stores the master key unwrapped.
+Removing a slot is refused unless another slot has a valid `check` under this
+repository’s master key. A repository never stores the master key unwrapped.
 
 ## 4. Envelope
 
@@ -241,9 +246,15 @@ copies before deduplicating and stores fresh copies of any that fail verificatio
 copy and removes the rest. The index is a
 cache of pack headers: it can always be rebuilt by reading every pack header, and
 `check` treats a mismatch between the two as damage of the index object.
+Readers report unreadable index objects and recover packs absent from the readable live
+index by reading their headers. `rebuild-index` holds an exclusive lock, reads every pack
+header, writes replacement index objects, and only then removes all old index objects.
+Only the last replacement object supersedes all old names, including unreadable objects;
+the other replacement objects remain live.
 
 Backup writes an index object after every 8 packs or 5 minutes, whichever comes first, and
-one at the end. Only these flushed indexes count for a rerun after a crash (§13).
+one at the end. These flushed indexes provide the fast path for a rerun after a crash
+(§13); packs without readable live-index coverage can be recovered from their headers.
 
 ## 9. Tree
 

@@ -17,7 +17,7 @@ export TMPDIR=$PWD/.tmp; mkdir -p .tmp          # Omarchy /tmp is a small tmpfs
 scripts/accept.sh                               # the full gate, exactly as CI
 cargo test --locked --test damage               # damage harness; KEELHAUL_SEED=<n> reproduces
 KEELHAUL_SOAK=1 cargo test --locked --release --test crash
-echo "docker compose up -d && KEELHAUL_E2E=1 cargo test --locked --test e2e" | newgrp docker
+echo "docker compose up -d --wait s3 sshd && KEELHAUL_E2E=1 cargo test --locked --test e2e_s3 --test e2e_sftp" | newgrp docker
 cargo build --release && ./target/release/keelhaul version
 ```
 

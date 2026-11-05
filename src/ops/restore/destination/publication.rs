@@ -12,10 +12,7 @@ pub(super) fn finish(
         Ok(()) => Ok(()),
         Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP) => match link() {
             Ok(()) => unlink().map_err(os),
-            Err(Errno::EXIST) => Err(Error::Refused(format!(
-                "restore conflict: {}",
-                name.to_string_lossy()
-            ))),
+            Err(Errno::EXIST) => Err(Error::Refused("restore conflict".into())),
             Err(e @ (Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP | Errno::PERM)) => {
                 Err(Error::Refused(format!(
                     "filesystem cannot safely publish {}: no-replace rename and hard links are unsupported ({e})",
@@ -24,10 +21,7 @@ pub(super) fn finish(
             }
             Err(e) => Err(os(e)),
         },
-        Err(Errno::EXIST) => Err(Error::Refused(format!(
-            "restore conflict: {}",
-            name.to_string_lossy()
-        ))),
+        Err(Errno::EXIST) => Err(Error::Refused("restore conflict".into())),
         Err(e) => Err(os(e)),
     }
 }
@@ -40,7 +34,10 @@ pub(in crate::ops::restore) struct Temporary {
 impl Temporary {
     pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
         apply(&self.file, entry)?;
-        self.file.sync_all()?;
+        // fsync keeps per-file ordering without macOS's expensive drive-cache flush.
+        // Restore does one F_FULLFSYNC on the target directory after publication;
+        // sudden power loss before that final barrier may lose completed files.
+        fs::fsync(&self.file).map_err(os)?;
         let renamed = fs::renameat_with(
             &self.parent,
             &self.name,
@@ -62,7 +59,7 @@ impl Temporary {
             },
             || fs::unlinkat(&self.parent, &self.name, AtFlags::empty()),
         )?;
-        self.parent.sync_all()?;
+        fs::fsync(&self.parent).map_err(os)?;
         let stat = fs::fstat(&self.file).map_err(os)?;
         Ok(FileIdentity::from_stat(&stat))
     }

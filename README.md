@@ -120,12 +120,16 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 `--json` emits one JSON document; `-q/--quiet`, `-v/--verbose` and `--jobs N`
 (default 4) control output and parallelism. See `keelhaul <command> --help` for flags.
 
+A slot with a damaged check tag can still open the repository if its wrapped key
+authenticates config. `key list` labels damaged and unreadable slots. Add a replacement
+slot before removing a damaged one; `check` and `verify` report it until it is removed.
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
 | `init` | Create an encrypted repository. |
-| `key list` | List unlocking slots. |
+| `key list` | List unlocking slots with `ok`, `damaged`, or `unreadable` status. |
 | `key add` | Add a password or `--new-key-file PATH` without rewriting backups. |
 | `key remove <slot-id>` | Remove an unlocking slot, retaining at least one. |
 | `backup <path>...` | Save a snapshot; unchanged chunks are reused. |
@@ -133,6 +137,7 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 | `ls <snap> [path]` | List a snapshot's saved files. |
 | `restore <snap> --target DIR` | Restore files, optionally selected with `--include PATH`. |
 | `check` | Check repository structure and metadata. |
+| `rebuild-index [--dry-run]` | Rebuild the index cache from pack headers. |
 | `verify [--subset N/M]` | Read and authenticate stored backup data. |
 | `forget` | Select snapshots to remove using explicit IDs or retention rules. |
 | `prune` | Reclaim unreferenced data and repack partly used packs. |
@@ -142,6 +147,30 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 Snapshot selectors accept a unique ID prefix or `latest`. Incremental backups
 use parent metadata; `--force-rehash` forces file contents to be read again.
 Filters include `--exclude`, `--exclude-file` and `--one-file-system`.
+
+## Read-only repositories
+
+Use `--no-lock` with `snapshots`, `ls`, `restore`, `check`, or `verify` to read a
+write-protected disk or a backend with read-only credentials:
+
+```sh
+keelhaul --no-lock snapshots
+keelhaul --no-lock restore latest --target /mnt/restore
+keelhaul --no-lock verify
+```
+
+Each command warns once on stderr that repository locking is skipped. Exclude concurrent
+writers while using this mode. All other commands, including `rebuild-index`, reject
+`--no-lock` with exit 2. Audits still examine stored lock objects for damage.
+
+## Recovering an index
+
+If an index object is damaged or missing, readers recover its pack locations from
+pack headers. Restore still reports damaged index objects and exits 3 after restoring
+readable files. Preview `keelhaul rebuild-index --dry-run`, then run
+`keelhaul rebuild-index` to replace the index cache under an exclusive lock. The command
+reads every pack header before writing replacements and removes old indexes last.
+It cannot repair damaged pack data.
 
 ## Retention
 
@@ -202,7 +231,12 @@ against known source files. Damage reports name the affected objects.
 | 2 | Invalid usage |
 | 3 | Repository damage found |
 | 4 | Repository locked |
-| 5 | Snapshot written; entries skipped (incomplete backup) |
+| 5 | Backup wrote a snapshot but could not read required source entries |
+
+Exit 5 applies only to backup. Successful read-only commands and `rebuild-index`
+return 0 even when a stored snapshot was incomplete. Expected exclusions such as
+unsupported file types do not make a backup incomplete. Errors and damage retain
+the exit codes above.
 
 ## Scheduling
 

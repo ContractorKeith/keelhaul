@@ -23,6 +23,11 @@ fn os(error: rustix::io::Errno) -> Error {
 }
 impl Destination {
     pub fn new(target: &Path) -> Result<Self, Error> {
+        if std::fs::symlink_metadata(target).is_ok_and(|m| m.is_symlink()) {
+            return Err(Error::Refused(
+                "target is a symlink; pass the directory it points to".into(),
+            ));
+        }
         let root = match fs::open(target, DIRECTORY, Mode::empty()) {
             Ok(fd) => fd,
             Err(rustix::io::Errno::NOENT) => {
@@ -36,6 +41,13 @@ impl Destination {
             root,
             created: Default::default(),
         })
+    }
+    pub fn finish(&self) -> Result<(), Error> {
+        #[cfg(target_os = "macos")]
+        fs::fcntl_fullfsync(&self.root).map_err(os)?;
+        #[cfg(not(target_os = "macos"))]
+        fs::fsync(&self.root).map_err(os)?;
+        Ok(())
     }
     fn directory(&self, path: &Path) -> Result<File, Error> {
         self.walk_directory(path, true)

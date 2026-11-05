@@ -162,6 +162,8 @@ pub fn run_cases(f: &Fixture, seed: u64) {
     let c = expected([
         signature(&ia, "index", "index-mismatch"),
         signature(&ib, "index", "index-mismatch"),
+        signature(a.as_str(), "pack", "hash-mismatch"),
+        signature(b.as_str(), "pack", "hash-mismatch"),
     ]);
     let mut v = c.clone();
     v.insert(signature(a.as_str(), "pack", "hash-mismatch"));

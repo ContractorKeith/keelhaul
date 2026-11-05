@@ -22,14 +22,7 @@ fn per_item_conflict_continues_and_directory_metadata_is_applied() {
     .unwrap();
     assert!(report.damaged.is_empty());
     assert_eq!(report.failed.len(), 1);
-    assert_eq!(
-        report.failed[0].path,
-        source
-            .strip_prefix("/")
-            .unwrap()
-            .join("b")
-            .to_string_lossy()
-    );
+    assert_eq!(report.failed[0].path, source.join("b").to_string_lossy());
     let restored = target.join(source.strip_prefix("/").unwrap());
     assert_eq!(std::fs::read(restored.join("z")).unwrap(), b"z");
     assert_eq!(std::fs::read(restored.join("b")).unwrap(), b"existing");
@@ -106,4 +99,16 @@ fn folding_directory_and_file_names_are_refused_without_merging() {
     assert_eq!(std::fs::read(restored.join("A")).unwrap(), b"first");
     assert!(restored.join("Dir/x").exists());
     assert!(!restored.join("Dir/y").exists());
+    // Reused-directory mtime restoration can encounter the same collision again.
+    let repeated = restore(&repo, &id, &target, &[]).unwrap();
+    let collision = source.join("dir").to_string_lossy().into_owned();
+    assert_eq!(
+        repeated
+            .failed
+            .iter()
+            .filter(|failure| failure.path == collision)
+            .count(),
+        1,
+        "{repeated:?}"
+    );
 }
