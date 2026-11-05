@@ -82,6 +82,9 @@ impl Options {
                 "snapshot IDs cannot be combined with a retention policy".into(),
             ));
         }
+        if policy && self.keep_tag.is_empty() && !self.counts().iter().flatten().any(|n| *n > 0) {
+            return Err(Error::Usage("retention policy would keep nothing".into()));
+        }
         let mut seen = HashSet::new();
         for part in self
             .group_by
