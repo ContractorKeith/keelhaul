@@ -175,7 +175,9 @@ pub(super) fn build<B: Backend>(
             return Err(Error::Refused("include path must not contain '..'".into()));
         }
         normalized.push(
-            path.components()
+            crate::ops::paths::normalize_root(path)
+                .map_err(|error| Error::Refused(format!("{}: {error}", path.display())))?
+                .components()
                 .filter(|c| matches!(c, Component::Normal(_)))
                 .collect(),
         );
