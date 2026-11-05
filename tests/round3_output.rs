@@ -73,3 +73,35 @@ fn snapshot_columns_align_to_the_widest_host() {
         assert_eq!(row.find(source.to_str().unwrap()), Some(column), "{text}");
     }
 }
+
+#[test]
+fn backup_summary_includes_unsupported_types_in_the_total() {
+    let dir = fixture();
+    let source = dir.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("file"), b"data").unwrap();
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        source.join("fifo"),
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::RUSR,
+        0,
+    )
+    .unwrap();
+    let missing = dir.path().join("missing");
+    let out = run(
+        dir.path(),
+        &[
+            "backup",
+            source.to_str().unwrap(),
+            missing.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(5), "{out:?}");
+    for bytes in [&out.stdout, &out.stderr] {
+        assert!(
+            String::from_utf8_lossy(bytes).contains("2 skipped (1 unsupported types)"),
+            "{out:?}"
+        );
+    }
+}

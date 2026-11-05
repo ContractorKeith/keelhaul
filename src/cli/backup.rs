@@ -45,19 +45,29 @@ pub(super) fn run<B: Backend>(
                     .map(|(id, _)| id)
                     .collect::<Vec<_>>();
                 println!(
-                    "snapshot {}: {} files, {} data blobs added, {} skipped",
+                    "snapshot {}: {} files, {} data blobs added, {} skipped ({} unsupported types)",
                     short_id(&report.snapshot, &ids),
                     report.summary.files_new
                         + report.summary.files_changed
                         + report.summary.files_unchanged,
                     report.summary.data_blobs_added,
-                    report.summary.files_skipped
+                    report.summary.files_skipped,
+                    report
+                        .skipped
+                        .iter()
+                        .filter(|entry| entry.reason == "unsupported file type")
+                        .count()
                 );
             }
             if report.incomplete {
                 crate::warning!(
-                    "snapshot written; {} entries skipped",
-                    report.skipped.iter().filter(|entry| entry.required).count()
+                    "snapshot written; {} skipped ({} unsupported types)",
+                    report.summary.files_skipped,
+                    report
+                        .skipped
+                        .iter()
+                        .filter(|entry| entry.reason == "unsupported file type")
+                        .count()
                 );
                 use std::io::Write;
                 std::io::stdout().flush()?;
