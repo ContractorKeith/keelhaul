@@ -96,7 +96,18 @@ fn run_inner(mut cli: Cli) -> anyhow::Result<()> {
                         if report.damage.is_empty() {
                             println!(
                                 "no damage: {} packs, {} snapshots checked",
-                                backend.list(crate::backend::Kind::Data)?.len(),
+                                backend
+                                    .list(crate::backend::Kind::Data)?
+                                    .iter()
+                                    .filter(|entry| {
+                                        match command {
+                                            Command::Verify {
+                                                subset: Some(subset),
+                                            } => subset.contains(&entry.name.as_str()[8..]),
+                                            _ => true,
+                                        }
+                                    })
+                                    .count(),
                                 backend.list(crate::backend::Kind::Snapshots)?.len()
                             );
                         }
