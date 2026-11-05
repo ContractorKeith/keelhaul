@@ -2,6 +2,9 @@
 
 ## Unreleased fixes
 
+- Add `--no-lock` for read-only recovery and audits; reject it on other commands.
+  Keep exit 5 exclusive to backups that cannot read required source entries.
+
 - Open through a damaged slot check after config authentication; list unreadable slots
   and allow key rotation while retaining a verified slot.
 

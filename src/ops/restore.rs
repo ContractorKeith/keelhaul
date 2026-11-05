@@ -58,10 +58,11 @@ pub fn restore_for_host<B: Backend>(
     host: Option<&str>,
 ) -> Result<Report, Error> {
     crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
-        restore_for_host_locked(repo, selector, target, includes, host)
+        restore_for_host_without_lock(repo, selector, target, includes, host)
     })
 }
-fn restore_for_host_locked<B: Backend>(
+/// Read without a repository lock; callers must exclude concurrent writers.
+pub fn restore_for_host_without_lock<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
     target: &Path,

@@ -56,10 +56,11 @@ pub fn ls_report_for_host<B: Backend>(
     host: Option<&str>,
 ) -> Result<ListingReport, Error> {
     crate::repo::lock::with(&repo.backend, repo.subkeys(), false, |_| {
-        ls_for_host_locked(repo, selector, filter, host)
+        ls_report_for_host_without_lock(repo, selector, filter, host)
     })
 }
-fn ls_for_host_locked<B: Backend>(
+/// Read without a repository lock; callers must exclude concurrent writers.
+pub fn ls_report_for_host_without_lock<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
     filter: Option<&Path>,

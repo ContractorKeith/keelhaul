@@ -181,6 +181,14 @@ pub fn check_backend<B: Backend>(backend: &B, secret: &Secret) -> Result<Report,
         run_check(State::new(backend, master.subkeys()), damage)
     })
 }
+/// Audit read-only storage without acquiring a repository lock.
+pub fn check_backend_without_lock<B: Backend>(
+    backend: &B,
+    secret: &Secret,
+) -> Result<Report, Error> {
+    let master = Repository::unlock(backend, secret)?;
+    run_check(State::new(backend, master.subkeys()), Vec::new())
+}
 pub(super) fn name_id(name: &ObjectName) -> String {
     name.as_str()
         .rsplit('/')

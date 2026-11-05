@@ -31,8 +31,14 @@ pub(super) fn restore<B: crate::backend::Backend>(
     includes: &[std::path::PathBuf],
     host: Option<&str>,
     json: bool,
+    no_lock: bool,
 ) -> anyhow::Result<()> {
-    let report = match crate::ops::restore::restore_for_host(repo, snap, target, includes, host) {
+    let result = if no_lock {
+        crate::ops::restore::restore_for_host_without_lock(repo, snap, target, includes, host)
+    } else {
+        crate::ops::restore::restore_for_host(repo, snap, target, includes, host)
+    };
+    let report = match result {
         Ok(report) => report,
         Err(error) => return restore_failure(error, json),
     };
@@ -63,8 +69,13 @@ pub(super) fn listing<B: crate::backend::Backend>(
     filter: Option<&std::path::Path>,
     host: Option<&str>,
     json: bool,
+    no_lock: bool,
 ) -> anyhow::Result<()> {
-    let report = crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?;
+    let report = if no_lock {
+        crate::ops::listing::ls_report_for_host_without_lock(repo, selector, filter, host)?
+    } else {
+        crate::ops::listing::ls_report_for_host(repo, selector, filter, host)?
+    };
     if json {
         println!("{}", serde_json::to_string(&report.entries)?);
     } else {

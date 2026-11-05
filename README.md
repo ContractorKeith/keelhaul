@@ -148,6 +148,21 @@ Snapshot selectors accept a unique ID prefix or `latest`. Incremental backups
 use parent metadata; `--force-rehash` forces file contents to be read again.
 Filters include `--exclude`, `--exclude-file` and `--one-file-system`.
 
+## Read-only repositories
+
+Use `--no-lock` with `snapshots`, `ls`, `restore`, `check`, or `verify` to read a
+write-protected disk or a backend with read-only credentials:
+
+```sh
+keelhaul --no-lock snapshots
+keelhaul --no-lock restore latest --target /mnt/restore
+keelhaul --no-lock verify
+```
+
+Each command warns once on stderr that repository locking is skipped. Exclude concurrent
+writers while using this mode. All other commands, including `rebuild-index`, reject
+`--no-lock` with exit 2. Audits still examine stored lock objects for damage.
+
 ## Recovering an index
 
 If an index object is damaged or missing, readers recover its pack locations from
@@ -216,7 +231,12 @@ against known source files. Damage reports name the affected objects.
 | 2 | Invalid usage |
 | 3 | Repository damage found |
 | 4 | Repository locked |
-| 5 | Snapshot written; entries skipped (incomplete backup) |
+| 5 | Backup wrote a snapshot but could not read required source entries |
+
+Exit 5 applies only to backup. Successful read-only commands and `rebuild-index`
+return 0 even when a stored snapshot was incomplete. Expected exclusions such as
+unsupported file types do not make a backup incomplete. Errors and damage retain
+the exit codes above.
 
 ## Scheduling
 

@@ -5,6 +5,7 @@ macro_rules! println {
 mod audit;
 mod backup;
 mod commands;
+mod readers;
 mod repo;
 mod secrets;
 
@@ -41,6 +42,9 @@ pub struct Cli {
     key_file: Option<PathBuf>,
     #[arg(long, global = true)]
     pub json: bool,
+    /// Skip repository locking for snapshots, ls, restore, check, and verify.
+    #[arg(long, global = true)]
+    no_lock: bool,
     #[arg(short, long, global = true)]
     quiet: bool,
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
