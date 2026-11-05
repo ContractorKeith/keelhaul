@@ -84,3 +84,44 @@ fn swapped_pack_bytes_are_named_by_structural_check() {
         );
     }
 }
+
+#[test]
+fn each_index_corruption_preserves_every_snapshot() {
+    let scratch = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(scratch.path()).unwrap().join("file");
+    let repo = Repository::init(MemoryBackend::new(), &Secret::KeyFile([7; 32])).unwrap();
+    let mut snapshots = Vec::new();
+    for text in ["first snapshot bytes", "second snapshot bytes"] {
+        std::fs::write(&source, text).unwrap();
+        let snapshot = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+        snapshots.push((snapshot.snapshot, text));
+    }
+    let indexes = repo.backend.list(Kind::Index).unwrap();
+    assert_eq!(indexes.len(), 2);
+    for entry in indexes {
+        let original = repo.backend.read(&entry.name).unwrap();
+        let mut damaged = original.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        repo.backend
+            .plant_raw(entry.name.as_str(), &damaged)
+            .unwrap();
+        for (snapshot, text) in &snapshots {
+            let target = tempfile::tempdir().unwrap();
+            let report = restore(&repo, snapshot, target.path(), &[]).unwrap();
+            assert!(report.failed.is_empty(), "{report:?}");
+            assert!(
+                report
+                    .damaged
+                    .iter()
+                    .any(|d| d.object == entry.name.as_str())
+            );
+            assert_eq!(
+                std::fs::read(target.path().join(source.strip_prefix("/").unwrap())).unwrap(),
+                text.as_bytes()
+            );
+        }
+        repo.backend
+            .plant_raw(entry.name.as_str(), &original)
+            .unwrap();
+    }
+}

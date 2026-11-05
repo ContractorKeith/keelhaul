@@ -133,6 +133,7 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 | `ls <snap> [path]` | List a snapshot's saved files. |
 | `restore <snap> --target DIR` | Restore files, optionally selected with `--include PATH`. |
 | `check` | Check repository structure and metadata. |
+| `rebuild-index [--dry-run]` | Rebuild the index cache from pack headers. |
 | `verify [--subset N/M]` | Read and authenticate stored backup data. |
 | `forget` | Select snapshots to remove using explicit IDs or retention rules. |
 | `prune` | Reclaim unreferenced data and repack partly used packs. |
@@ -142,6 +143,15 @@ files with mode 600. Scheduled runs require a noninteractive secret source.
 Snapshot selectors accept a unique ID prefix or `latest`. Incremental backups
 use parent metadata; `--force-rehash` forces file contents to be read again.
 Filters include `--exclude`, `--exclude-file` and `--one-file-system`.
+
+## Recovering an index
+
+If an index object is damaged or missing, readers recover its pack locations from
+pack headers. Restore still reports damaged index objects and exits 3 after restoring
+readable files. Preview `keelhaul rebuild-index --dry-run`, then run
+`keelhaul rebuild-index` to replace the index cache under an exclusive lock. The command
+reads every pack header before writing replacements and removes old indexes last.
+It cannot repair damaged pack data.
 
 ## Retention
 
