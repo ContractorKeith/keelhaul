@@ -104,6 +104,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     }
                     (serde_json::to_value(summary)?, text)
                 }
+                Command::RebuildIndex { dry_run } => {
+                    let repo = Repository::open(backend, &secret)?;
+                    let summary = crate::ops::rebuild_index::rebuild(&repo, dry_run)?;
+                    let text = format!(
+                        "{} packs indexed, {} indexes written, {} old indexes removed{}",
+                        summary.packs,
+                        summary.indexes_written,
+                        summary.indexes_removed,
+                        if dry_run { " (dry run)" } else { "" }
+                    );
+                    (serde_json::to_value(summary)?, text)
+                }
                 Command::Unlock => {
                     let repo = Repository::open(backend, &secret)?;
                     let removed = crate::repo::lock::unlock(

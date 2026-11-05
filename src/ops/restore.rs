@@ -79,7 +79,10 @@ fn restore_with_hook<B: Backend>(
 ) -> Result<Report, Error> {
     let (snapshot_id, snapshot) = repo.select_snapshot_for_host(selector, host)?;
     let mut store = BlobStore::load(repo)?;
-    let mut report = Report::default();
+    let mut report = Report {
+        damaged: store.damage.clone(),
+        ..Report::default()
+    };
     let items = plan::build(&mut store, &snapshot, includes, &mut report)?;
     let destination = destination::Destination::new(target)
         .map_err(|error| Error::Refused(format!("{}: {error}", target.display())))?;

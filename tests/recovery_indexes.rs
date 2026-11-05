@@ -1,0 +1,59 @@
+use keelhaul::{
+    backend::{Backend, Kind, memory::MemoryBackend},
+    ops::{
+        backup::backup, check::check, listing::ls, prune::prune, rebuild_index::rebuild,
+        restore::restore,
+    },
+    repo::Repository,
+    secret::Secret,
+};
+#[test]
+fn damaged_deleted_and_foreign_indexes_recover_and_rebuild() {
+    for mutation in ["flip", "delete", "foreign"] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = std::fs::canonicalize(dir.path()).unwrap().join("source");
+        std::fs::create_dir(&source).unwrap();
+        for n in 0..3 {
+            std::fs::write(source.join(format!("file{n}")), format!("contents {n}")).unwrap();
+        }
+        let secret = Secret::KeyFile([7; 32]);
+        let repo = Repository::init(MemoryBackend::new(), &secret).unwrap();
+        let snap = backup(&repo, std::slice::from_ref(&source), vec![]).unwrap();
+        let name = repo.backend.list(Kind::Index).unwrap()[0].name.clone();
+        match mutation {
+            "flip" => {
+                let mut bytes = repo.backend.read(&name).unwrap();
+                *bytes.last_mut().unwrap() ^= 1;
+                repo.backend.plant_raw(name.as_str(), &bytes).unwrap();
+            }
+            "delete" => repo.backend.delete(&name).unwrap(),
+            _ => {
+                let foreign = Repository::init(MemoryBackend::new(), &secret).unwrap();
+                backup(&foreign, std::slice::from_ref(&source), vec![]).unwrap();
+                let other = &foreign.backend.list(Kind::Index).unwrap()[0].name;
+                repo.backend
+                    .plant_raw(other.as_str(), &foreign.backend.read(other).unwrap())
+                    .unwrap();
+            }
+        }
+        let target = dir.path().join("out");
+        let report = restore(&repo, &snap.snapshot, &target, &[]).unwrap();
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert_eq!(report.damaged.is_empty(), mutation == "delete");
+        for n in 0..3 {
+            let path = source.join(format!("file{n}"));
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                std::fs::read(target.join(path.strip_prefix("/").unwrap())).unwrap()
+            );
+        }
+        assert!(!ls(&repo, "latest", None).unwrap().is_empty());
+        let before = repo.backend.list(Kind::Index).unwrap();
+        rebuild(&repo, true).unwrap();
+        assert_eq!(before, repo.backend.list(Kind::Index).unwrap());
+        rebuild(&repo, false).unwrap();
+        assert!(check(&repo).unwrap().damage.is_empty());
+        prune(&repo, 20, false).unwrap();
+        assert!(check(&repo).unwrap().damage.is_empty());
+    }
+}

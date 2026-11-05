@@ -2,6 +2,7 @@
 mod parent;
 mod writer;
 pub use writer::{SealedBlob, Upload};
+mod loading;
 mod reader;
 use super::{Error, Repository, objects::missing, open::damage};
 use crate::{
@@ -25,6 +26,7 @@ pub struct Location {
 pub struct BlobStore<'a, B> {
     repo: &'a Repository<B>,
     uploads: Option<writer::Uploads>,
+    pub damage: Vec<crate::damage::Damage>,
     pub index: HashMap<(BlobKind, String), Location>,
     pub(crate) suspect: HashSet<(BlobKind, String)>,
     parent_checked: HashSet<String>,
@@ -43,45 +45,11 @@ pub struct BlobStore<'a, B> {
 }
 impl<'a, B: Backend> BlobStore<'a, B> {
     pub fn load(repo: &'a Repository<B>) -> Result<Self, Error> {
-        let mut indexes = Vec::new();
-        let mut superseded = HashSet::new();
-        for entry in repo.backend.list(Kind::Index)? {
-            let bytes = repo.read_object(&entry.name, Label::Index)?;
-            let index = Index::parse(&bytes)
-                .map_err(|e| damage(entry.name.as_str(), "bad-format", &e.to_string()))?;
-            superseded.extend(index.supersedes.iter().cloned());
-            indexes.push((entry.name.as_str()[6..].to_owned(), index));
-        }
-        let mut index = HashMap::new();
-        let mut headers = HashMap::new();
-        for (id, value) in indexes {
-            if superseded.contains(&id) {
-                continue;
-            }
-            for pack in value.packs {
-                if let Some((_, previous)) = headers.get(&pack.id)
-                    && previous != &pack.blobs
-                {
-                    return Err(damage(
-                        &format!("index/{id}"),
-                        "index-mismatch",
-                        "indexes disagree on pack header",
-                    ));
-                }
-                headers.insert(pack.id.clone(), (format!("index/{id}"), pack.blobs.clone()));
-                for blob in pack.blobs {
-                    index
-                        .entry((blob.kind, blob.id.clone()))
-                        .or_insert(Location {
-                            pack: pack.id.clone(),
-                            blob,
-                        });
-                }
-            }
-        }
+        let (index, headers, damage) = loading::load(repo)?;
         Ok(Self {
             repo,
             uploads: None,
+            damage,
             index,
             suspect: HashSet::new(),
             parent_checked: HashSet::new(),

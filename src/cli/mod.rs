@@ -132,6 +132,11 @@ pub(super) enum Command {
     },
     #[command(about = "Remove stale or dead repository locks")]
     Unlock,
+    /// Rebuild cached indexes from every pack header.
+    RebuildIndex {
+        #[arg(long)]
+        dry_run: bool,
+    },
     #[command(about = "Create an encrypted repository")]
     Init,
     #[command(about = "Manage repository key slots")]

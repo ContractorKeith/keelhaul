@@ -241,6 +241,11 @@ copies before deduplicating and stores fresh copies of any that fail verificatio
 copy and removes the rest. The index is a
 cache of pack headers: it can always be rebuilt by reading every pack header, and
 `check` treats a mismatch between the two as damage of the index object.
+Readers report unreadable index objects and recover packs absent from the readable live
+index by reading their headers. `rebuild-index` holds an exclusive lock, reads every pack
+header, writes replacement index objects, and only then removes all old index objects.
+Only the last replacement object supersedes all old names, including unreadable objects;
+the other replacement objects remain live.
 
 Backup writes an index object after every 8 packs or 5 minutes, whichever comes first, and
 one at the end. Only these flushed indexes count for a rerun after a crash (§13).

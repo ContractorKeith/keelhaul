@@ -11,3 +11,5 @@ pub mod verify;
 
 pub mod forget;
 pub mod prune;
+
+pub mod rebuild_index;

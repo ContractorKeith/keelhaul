@@ -101,7 +101,7 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
             _ => bytes.extend(b"junk"),
         };
         f.plant(name, &bytes);
-        let mut e = expected([signature(
+        let e = expected([signature(
             name,
             if name == &f.index {
                 "index"
@@ -110,13 +110,6 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
             },
             "hash-mismatch",
         )]);
-        if name == &f.index {
-            e.extend(
-                f.roots
-                    .iter()
-                    .map(|id| signature(id, "blob", "dangling-reference")),
-            );
-        }
         run(
             f,
             seed,
@@ -124,6 +117,26 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
             e.clone(),
             e,
         );
+        if name == &f.index {
+            for (id, _) in f.repo.snapshots().unwrap() {
+                let scratch = tempfile::tempdir().unwrap();
+                let restored =
+                    keelhaul::ops::restore::restore(&f.repo, &id, scratch.path(), &[]).unwrap();
+                assert!(restored.failed.is_empty(), "seed {seed}: {restored:?}");
+                for file in f
+                    .files
+                    .iter()
+                    .filter(|file| file.path.starts_with(&format!("snapshots/{id}:")))
+                {
+                    let path = file.path.split_once(':').unwrap().1;
+                    assert_eq!(
+                        std::fs::read(path).unwrap(),
+                        std::fs::read(scratch.path().join(path.trim_start_matches('/'))).unwrap(),
+                        "seed {seed}: {path}"
+                    );
+                }
+            }
+        }
     }
     f.reset();
     let mut config = f.bytes("config");

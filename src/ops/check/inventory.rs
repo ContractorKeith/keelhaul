@@ -177,6 +177,15 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
     }
     for id in state.packs.keys() {
         if !named.contains(id) {
+            if let Some(Some(header)) = state.packs.get(id) {
+                for blob in &header.blobs {
+                    state
+                        .live
+                        .entry((blob.kind, blob.id.clone()))
+                        .or_default()
+                        .push((id.clone(), blob.clone()));
+                }
+            }
             state.report.note(
                 crate::repo::blobs::pack_name(id)?.as_str(),
                 "pack",
