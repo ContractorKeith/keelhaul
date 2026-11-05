@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.98"
 license = "MIT"
 description = "A deduplicating, encrypted backup CLI"
+repository = "https://github.com/ContractorKeith/keelhaul"
+homepage = "https://github.com/ContractorKeith/keelhaul"
+readme = "README.md"
+keywords = ["backup", "encryption", "deduplication", "cli", "snapshot"]
+categories = ["command-line-utilities", "filesystem", "cryptography"]
+include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md", "/docs/SPEC.md", "/testdata/vectors/**"]
 
 [features]
 default = []

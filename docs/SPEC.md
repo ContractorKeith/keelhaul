@@ -381,7 +381,15 @@ Under an exclusive lock:
    is younger than 30 minutes (it may belong to an in-flight backup on another host).
 3. A pack whose unused bytes exceed `--max-unused` (default 20%) of its blob bytes is
    repacked: its used blobs are copied into new packs.
-4. Write new index objects whose `supersedes` lists every old index. Only then delete the
-   old indexes, the repacked packs and the unused packs, in that order.
+4. Write the replacement index as one or more index objects, each with an uncompressed
+   JSON payload of at most 16 MiB. Earlier objects have an empty `supersedes` list;
+   only the last object lists every old index in `supersedes`. Publish all replacement
+   objects before deleting the old indexes, the repacked packs and the unused packs,
+   in that order.
+5. Before the delete phase and periodically during it, re-run the lock self-check and
+   re-list `snapshots/`. Abort if the lock is gone or a snapshot not present in the
+   original scan has appeared. If no deletion has happened yet, withdraw the replacement
+   index objects before returning the error, preserving the old indexes. Once deletion
+   has started, retain the replacement indexes so surviving data remains indexed.
 
 A crash at any step leaves a repository that `check` passes.
