@@ -16,7 +16,7 @@ pub struct Report {
     pub damaged: Vec<crate::damage::Damage>,
     pub failed: Vec<Failure>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Failure {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,6 +171,8 @@ fn restore_with_hook<B: Backend>(
         (&a.object, &a.problem, &a.detail).cmp(&(&b.object, &b.problem, &b.detail))
     });
     report.damaged.dedup();
+    report.failed.sort();
+    report.failed.dedup();
     Ok(report)
 }
 
