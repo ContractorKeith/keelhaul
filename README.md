@@ -11,6 +11,10 @@ MIT licensed.
 
 ## Install
 
+Each GitHub release carries the archives and `SHA256SUMS` below. The Homebrew formula and
+the crates.io crate are published by hand from the same tag, so they can lag a new release
+by a few hours.
+
 Homebrew (Linux or macOS):
 
 ```sh
