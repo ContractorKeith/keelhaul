@@ -24,6 +24,10 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: scripts/accept.sh
+      # crates.io publishing is manual (docs/RELEASING.md); prove the package builds first.
+      - name: Package for crates.io
+        if: runner.os == 'Linux'
+        run: cargo publish --dry-run --locked
 
   build:
     needs: gate
@@ -191,6 +195,17 @@ jobs:
                   notes.append(line)
           if not found or not '\n'.join(notes).strip():
               raise SystemExit(f'Missing changelog notes for {version}')
+          # Say exactly what this workflow ships; brew and cargo follow by hand.
+          assets = sorted(p.name for p in Path('dist').iterdir())
+          notes += ['', '### Assets', '']
+          notes += [f'- `{name}`' for name in assets]
+          notes += [
+              '',
+              'This release attaches the files above. The Homebrew formula '
+              '(`brew install ContractorKeith/tap/keelhaul`) and the crates.io crate '
+              '(`cargo install keelhaul --locked`) are published by hand from this tag '
+              '(docs/RELEASING.md) and can lag it by a few hours.',
+          ]
           Path('release-notes.md').write_text('\n'.join(notes).strip() + '\n')
           PY
       - name: Publish GitHub Release
