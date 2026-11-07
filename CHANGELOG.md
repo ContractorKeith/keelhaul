@@ -26,7 +26,8 @@ later versions keep reading v1 repositories.
 - `--json` on every command; exit codes 0 ok, 1 error, 2 usage, 3 damage, 4 locked,
   5 snapshot written but incomplete.
 - Release archives for Linux (x86_64, arm64, static musl) and macOS (x86_64, arm64) with
-  SHA256SUMS; Homebrew tap and crates.io.
+  SHA256SUMS, attached to this release. The Homebrew formula (`ContractorKeith/tap`) and the
+  crates.io crate are published by hand from the same tag and can lag it by a few hours.
 
 ### Verification before release
 - Seeded damage harness (200 seeds) and SIGKILL crash loops for backup and prune (500
