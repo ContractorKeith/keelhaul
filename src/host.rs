@@ -1,5 +1,3 @@
-//! Machine and effective-user identity, independent of shell environment variables.
-
 pub fn hostname() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }

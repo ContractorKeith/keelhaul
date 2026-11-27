@@ -1,9 +1,6 @@
-//! Resource exhaustion is a run failure, never a reason to omit a file.
 use crate::repo::Error;
 use std::{io, path::Path};
 
-// Refuse a worker count that cannot fit even the ordinary descriptor budget.
-// Runtime classification below also covers inherited descriptors and system limits.
 pub(super) fn jobs(jobs: usize) -> Result<(), Error> {
     let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile).current;
     if limit.is_some_and(|limit| jobs as u64 * 2 + 16 > limit) {

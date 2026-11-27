@@ -1,4 +1,3 @@
-//! Root validation shared by audit and restore; damage is local to affected roots.
 use super::{
     snapshot::{Snapshot, decode_root},
     tree::{Entry, Tree},
@@ -55,7 +54,6 @@ pub fn validate(snapshot: &Snapshot, tree: &Tree) -> Shape {
     shape
 }
 
-/// Decode only roots named by this snapshot; ordinary tree names never use this encoding.
 pub fn root_path(paths: &[String], entry: &Entry) -> Result<String, String> {
     let name = entry
         .name

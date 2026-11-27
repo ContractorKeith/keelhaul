@@ -1,4 +1,3 @@
-//! Audit rendering, including restore failures before a report can be assembled.
 use crate::{damage::Damage, repo::Error};
 pub(super) fn restore_failure(error: Error, json: bool) -> anyhow::Result<()> {
     let damage = Damage::from_error(error)?;
@@ -68,7 +67,6 @@ pub(super) fn restore<B: crate::backend::Backend>(
         super::backup::completed_damage()?;
     }
     if !report.failed.is_empty() {
-        // Report already rendered; avoid emitting a second JSON document.
         std::process::exit(1);
     }
     Ok(())

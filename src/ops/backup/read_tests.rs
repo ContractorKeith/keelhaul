@@ -44,7 +44,6 @@ fn append_during_read_keeps_bytes_and_open_metadata() {
             )
         });
         assert!(matches!(rx.recv().unwrap().unwrap(), Event::Read));
-        // Append after the descriptor metadata was captured and before draining chunks.
         let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
         file.write_all(&vec![43; 1024 * 1024]).unwrap();
         let mut changed = false;

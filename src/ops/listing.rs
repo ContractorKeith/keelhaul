@@ -61,7 +61,6 @@ pub fn ls_report_for_host<B: Backend>(
         ls_report_for_host_without_lock(repo, selector, filter, host)
     })
 }
-/// Read without a repository lock; callers must exclude concurrent writers.
 pub fn ls_report_for_host_without_lock<B: Backend>(
     repo: &Repository<B>,
     selector: &str,
@@ -210,7 +209,6 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-// Readers retain damage when no authenticated snapshot can satisfy `latest`.
 pub(super) fn select_snapshot_for_host<B: Backend>(
     repo: &Repository<B>,
     selector: &str,

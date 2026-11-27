@@ -1,4 +1,3 @@
-//! Plan fully before mutating; publish the replacement index before deleting anything.
 mod delete;
 mod indexes;
 mod used;
@@ -46,8 +45,6 @@ pub fn prune_with_clock<B: Backend>(
 }
 
 fn old(modified: Option<SystemTime>, now: SystemTime) -> bool {
-    // Missing modification times disable both age-based cleanups: retain orphan
-    // packs and temporary names because their safe cleanup age is unknown.
     modified
         .and_then(|t| now.duration_since(t).ok())
         .is_some_and(|age| age > STALE)
@@ -114,8 +111,6 @@ fn run_limit<B: Backend>(
                 entry.name
             ))
         })?;
-        // An unreadable header is distinct from a new pack. Verified indexed
-        // ranges can be rescued, but this damaged physical pack is never kept.
         if header.is_none() {
             force_repack.insert(id.clone());
         }
@@ -143,7 +138,6 @@ fn run_limit<B: Backend>(
         if (total - retained) * 100 > total * u128::from(max_unused) || force_repack.contains(&id) {
             summary.packs_repacked += 1;
             summary.blobs_copied += chosen.len();
-            // Exact stored-byte saving is finalized after the replacement packs exist.
             summary.bytes_freed += u64::try_from(total - retained)
                 .map_err(|_| Error::Refused("pack size overflow".into()))?;
             repack_unused += u64::try_from(total - retained)
@@ -203,7 +197,6 @@ fn run_limit<B: Backend>(
         .saturating_sub(repack_unused)
         .saturating_add(replaced_bytes)
         .saturating_sub(written_bytes);
-    // Include any additive indexes the pack writer flushed. They stay valid on a crash.
     let old_indexes = repo.backend.list(Kind::Index)?;
     let mut expected_indexes = scanned_indexes;
     expected_indexes.extend(
@@ -214,7 +207,6 @@ fn run_limit<B: Backend>(
     );
     indexes::unchanged(repo, &expected_indexes)?;
     guard.self_check()?;
-    // Publish replacements before deleting any old object.
     let replacement_ids = indexes::write(
         repo,
         guard,
@@ -231,8 +223,6 @@ fn run_limit<B: Backend>(
     if let Err(error) = delete::fence(repo, guard, &snapshots)
         .and_then(|()| indexes::unchanged(repo, &expected_indexes))
     {
-        // Before the first deletion, withdrawing only our replacement objects
-        // restores old indexes needed by a backup that ran while we slept.
         for id in replacement_ids.iter().rev() {
             repo.backend
                 .delete(&crate::backend::ObjectName::new(&format!("index/{id}"))?)?;

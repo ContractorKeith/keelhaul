@@ -31,8 +31,6 @@ fn per_item_conflict_continues_and_directory_metadata_is_applied() {
 #[cfg(target_os = "macos")]
 #[test]
 fn folding_directory_and_file_names_are_refused_without_merging() {
-    // Use distinct Linux-compatible tree entries without needing a case-sensitive
-    // source volume: mutate the authenticated tree through the fixture writer.
     use crate::{
         crypto::envelope::Label,
         format::{pack::BlobKind, tree::Tree},
@@ -99,7 +97,6 @@ fn folding_directory_and_file_names_are_refused_without_merging() {
     assert_eq!(std::fs::read(restored.join("A")).unwrap(), b"first");
     assert!(restored.join("Dir/x").exists());
     assert!(!restored.join("Dir/y").exists());
-    // Reused-directory mtime restoration can encounter the same collision again.
     let repeated = restore(&repo, &id, &target, &[]).unwrap();
     let collision = source.join("dir").to_string_lossy().into_owned();
     assert_eq!(

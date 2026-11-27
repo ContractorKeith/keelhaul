@@ -170,7 +170,6 @@ fn kdf_bounds_rejected_before_hashing() {
     ] {
         let mut value = v["slot"].clone();
         value["kdf"][field] = json!(bad);
-        // Deserialize internally to exercise the KDF boundary as well as the format parser.
         let slot: KeySlot = serde_json::from_value(value.clone()).unwrap();
         let start = std::time::Instant::now();
         assert!(slot::unwrap(&slot, &Secret::Password("pw".into())).is_err());

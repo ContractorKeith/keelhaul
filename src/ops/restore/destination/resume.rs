@@ -13,7 +13,7 @@ impl Destination {
         };
         let parent = match self.existing_directory(parent) {
             Ok(parent) => parent,
-            Err(_) => return Ok(None), // Preflight reports inaccessible ancestors.
+            Err(_) => return Ok(None),
         };
         let Some(name) = path.file_name() else {
             return Ok(None);
@@ -23,7 +23,6 @@ impl Destination {
             Ok(_) | Err(rustix::io::Errno::NOENT) => return Ok(None),
             Err(error) => return Err(os(error)),
         }
-        // NONBLOCK also prevents a raced replacement with a FIFO from hanging.
         let file: File = fs::openat(
             &parent,
             name,

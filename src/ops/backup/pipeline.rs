@@ -1,4 +1,3 @@
-//! Bounded walker → file workers → assembler → upload workers.
 use super::{Options, Patterns, Skipped, files, parent::Previous, trees::Trees, walk, workers};
 use crate::{
     backend::Backend,
@@ -86,8 +85,6 @@ pub(super) fn run<B: Backend>(
         let (events_tx, events_rx) = mpsc::sync_channel(jobs);
         let (uploads_tx, uploads_rx) = mpsc::sync_channel::<Upload>(jobs);
         let uploads_rx = Arc::new(Mutex::new(uploads_rx));
-        // At most eight packs await a flush. This capacity also allows each
-        // uploader to report failure while the assembler dispatches the batch.
         let (done_tx, done_rx) = mpsc::sync_channel(jobs + 8);
         store.upload_pool(uploads_tx, done_rx);
         for _ in 0..jobs {
@@ -112,8 +109,6 @@ pub(super) fn run<B: Backend>(
             let seen = &seen;
             let hardlinks = &hardlinks;
             thread::Builder::new().spawn_scoped(scope, move || {
-                // Keep the task receiver alive until the primary error is reported.
-                // Otherwise the walker can report cancellation before the I/O cause.
                 workers::run("file", events.clone(), || {
                     while let Some(task) = workers::receive(&receiver, "file")? {
                         files::read(task, &gear, &keys, seen, hardlinks, &events)?;
@@ -140,8 +135,6 @@ pub(super) fn run<B: Backend>(
             });
         })?;
         drop(events_tx);
-        // An early return drops the receivers and store's upload sender, which
-        // releases every blocked send before the scope joins its threads.
         let mut summary = Summary::default();
         let mut blobs_healed = 0;
         let mut skipped = Vec::new();
@@ -213,7 +206,6 @@ pub(super) fn run<B: Backend>(
         for damage in &store.damage {
             crate::output::damage(damage);
         }
-        // The sender must be dropped inside the scope, before it joins uploads.
         drop(store);
         for _ in 0..jobs {
             match events_rx.recv().map_err(|_| closed())?? {

@@ -1,4 +1,3 @@
-//! One metadata walker; file bytes are handled by the bounded worker pool.
 use super::{
     Options, Patterns,
     parent::Previous,

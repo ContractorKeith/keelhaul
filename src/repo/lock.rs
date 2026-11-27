@@ -1,4 +1,3 @@
-//! Cooperative repository locks. The scoped refresher cannot outlive its backend.
 mod payload;
 use super::{Error, audit};
 use crate::{
@@ -110,7 +109,6 @@ impl<'a, B: Backend> Guard<'a, B> {
     }
     fn refresh_inner(&self) -> Result<(), Error> {
         let mut held = self.held.lock().map_err(poison)?;
-        // A stalled process must not resurrect a lock after another operation ignored it.
         if held.payload.age(self.clock.now())? > STALE
             || !self
                 .backend
@@ -140,7 +138,6 @@ impl<'a, B: Backend> Guard<'a, B> {
     ) -> Result<T, Error> {
         std::thread::scope(|scope| {
             let (send, recv) = mpsc::channel::<()>();
-            // Dropping the sender also wakes the thread when the operation unwinds.
             let worker = scope.spawn(move || {
                 while matches!(
                     recv.recv_timeout(interval),
@@ -199,8 +196,6 @@ fn write<B: Backend>(backend: &B, keys: &Subkeys, payload: &Lock) -> Result<Obje
     }
     Ok(name)
 }
-/// Audits still report malformed locks, while honoring every readable live lock.
-/// Mutating operations always refuse malformed locks instead.
 pub(crate) fn with_audit<B: Backend>(
     backend: &B,
     keys: Subkeys,
@@ -220,7 +215,6 @@ fn scan<B: Backend>(
     let mut locks = Vec::new();
     for entry in backend.list(Kind::Locks)? {
         let bytes = match audit::object(backend, keys, &entry.name, Label::Lock) {
-            // Refresh/release may remove an object between list and read.
             Err(Error::Damage {
                 problem: "missing", ..
             })

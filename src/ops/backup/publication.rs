@@ -1,4 +1,3 @@
-//! Retain the snapshot's referenced blob set across the publication window.
 use crate::{
     backend::{Backend, Kind, ObjectName},
     format::{

@@ -1,4 +1,3 @@
-//! Rebuild readable headers, preserving indexed locations for damaged headers.
 use crate::{
     backend::{Backend, Kind},
     crypto::envelope::Label,
@@ -75,8 +74,6 @@ pub fn rebuild<B: Backend>(repo: &Repository<B>, dry_run: bool) -> Result<Summar
                 ));
             }
         }
-        // The final commit object supersedes ALL old names, including unreadable ones.
-        // Earlier batches must remain live after it is published.
         current.supersedes = supersedes;
         if serde_json::to_vec(&current)?.len() > LIMIT {
             let supersedes = std::mem::take(&mut current.supersedes);

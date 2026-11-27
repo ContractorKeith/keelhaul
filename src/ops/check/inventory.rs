@@ -134,8 +134,6 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
                         "index-mismatch",
                         "index differs from complete pack header",
                     );
-                    // A swapped pack has an authentic header but the wrong name.
-                    // Only mismatches need a full read during a structural check.
                     let object = crate::repo::blobs::pack_name(&pack.id)?;
                     if let Some(bytes) =
                         state.report.collect(audit::read(state.backend, &object))?
@@ -151,8 +149,6 @@ pub(super) fn index<B: Backend>(state: &mut State<'_, B>) -> Result<(), Error> {
                 }
                 _ => {}
             }
-            // Keep indexed descriptors even when headers are damaged: other trees
-            // and files in that pack remain independently authenticated and readable.
             for blob in &pack.blobs {
                 state
                     .live

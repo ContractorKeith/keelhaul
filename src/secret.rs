@@ -8,7 +8,6 @@ use std::{
     process::{Command, Stdio},
 };
 
-// Deliberately no Debug: secret bytes must never reach diagnostics.
 pub enum Secret {
     Password(String),
     KeyFile([u8; 32]),
@@ -149,8 +148,6 @@ pub fn new_key_file(path: &Path) -> Result<Secret, Error> {
     Ok(Secret::KeyFile(bytes))
 }
 
-// Read at most one byte beyond the limit, then kill and reap the command on
-// every early error. Drain stderr concurrently, retaining only a bounded tail.
 fn command_password(command: &str) -> Result<Vec<u8>, Error> {
     const LIMIT: u64 = 1024 * 1024;
     let mut child = Command::new("sh")
@@ -219,7 +216,6 @@ fn stderr_tail(mut input: impl Read) -> io::Result<String> {
     let text = String::from_utf8_lossy(&bytes);
     let lines = text.lines().collect::<Vec<_>>();
     let text = lines[lines.len().saturating_sub(10)..].join("\n");
-    // Lossy UTF-8 decoding can expand a truncated codepoint; retain the byte cap.
     let mut start = text.len().saturating_sub(2048);
     while !text.is_char_boundary(start) {
         start += 1;

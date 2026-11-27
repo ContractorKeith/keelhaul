@@ -1,4 +1,3 @@
-//! Pack assembler and durable index flushes.
 mod parent;
 mod writer;
 pub use writer::{SealedBlob, Upload};
@@ -51,7 +50,6 @@ impl<'a, B: Backend> BlobStore<'a, B> {
         }
         Ok(store)
     }
-    /// Callers that render a damage report retain each finding without warning twice.
     pub fn load_quiet(repo: &'a Repository<B>) -> Result<Self, Error> {
         let (index, headers, damage) = loading::load(repo)?;
         Ok(Self {
@@ -109,7 +107,6 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             raw_length,
         };
         let descriptor_bytes = serde_json::to_vec(&blob)?.len() as u64 + 1;
-        // The raw header bounds the sealed header too, since seal only shrinks it.
         if self.header_bytes + descriptor_bytes > MAX_HEADER - 41 {
             self.close_pack()?;
             blob.offset = 0;
@@ -173,7 +170,6 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             id.clone(),
             (format!("data/{}/{id}", &id[..2]), header.blobs.clone()),
         );
-        // Keep one index payload below the envelope's 64 MiB decompression cap.
         if self.index_bytes + self.header_bytes > 32 * 1024 * 1024 {
             self.flush_index()?;
         }
