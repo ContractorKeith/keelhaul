@@ -34,7 +34,6 @@ fn one_of_a_thousand_and_ctime_and_force_rehash() {
     assert_eq!(first.summary.files_read, 1000);
     let file = scratch.path().join("0042");
     let mtime = filetime::FileTime::from_last_modification_time(&fs::metadata(&file).unwrap());
-    // A real content write changes ctime; restore mtime to defeat size+mtime alone.
     fs::write(&file, b"different").unwrap();
     filetime::set_file_mtime(&file, mtime).unwrap();
     let second = run(&repo, scratch.path(), options(8));
@@ -85,7 +84,6 @@ fn parent_host_paths_override_and_damaged_tree_fallback() {
         .unwrap();
     let mut explicit = options(4);
     explicit.parent = Some(first.snapshot.clone());
-    // Exercise the CLI warning contract against an opaque copy of this damaged repo.
     let copy_scratch = tempfile::tempdir().unwrap();
     let local_path = copy_scratch.path().join("damaged-repo");
     let local = keelhaul::backend::local::LocalBackend::new(&local_path).unwrap();
@@ -108,7 +106,6 @@ fn parent_host_paths_override_and_damaged_tree_fallback() {
     );
     let key = scratch.path().join("key");
     fs::write(&key, [8; 32]).unwrap();
-    // Keep the backed-up root distinct from the copied repository and secret.
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_keelhaul"))
         .env("HOME", scratch.path())
         .env_remove("KEELHAUL_PASSWORD_FILE")
@@ -152,7 +149,6 @@ fn tree_id_is_independent_of_jobs_and_duplicate_chunks_are_stored_once() {
         repo.select_snapshot(&a.snapshot).unwrap().1.tree,
         repo.select_snapshot(&b.snapshot).unwrap().1.tree
     );
-    // Check fresh concurrent reservations as well, not only existing-index dedup.
     let fresh = Repository::init(MemoryBackend::new(), &Secret::KeyFile([9; 32])).unwrap();
     assert_eq!(
         run(&fresh, scratch.path(), options(8))
@@ -277,8 +273,6 @@ fn excludes_golden_and_cli_exclude_file_comments() {
     ] {
         assert!(!restored.join(file).exists(), "excluded {file}");
     }
-    // `git check-ignore --no-index` agrees: {a,b} is literal, trailing
-    // spaces are trimmed, and `keep\ ` matches a name with one final space.
     let result = cli(&[
         "backup",
         root.join("a.tmp").to_str().unwrap(),

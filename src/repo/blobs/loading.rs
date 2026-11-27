@@ -1,4 +1,3 @@
-//! Indexes are caches: recover missing coverage from authenticated pack headers.
 use super::*;
 type Loaded = (
     HashMap<(BlobKind, String), Location>,

@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-/// SPEC §12's algorithms and payloads must ship as usable JSON fixtures.
 #[test]
 fn spec_vectors_exist_and_parse() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/vectors");

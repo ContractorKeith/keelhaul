@@ -9,8 +9,6 @@ use keelhaul::{
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    // exec with a cleaned environment instead of mutating process-global state.
-    // This also covers backend-specific variables without duplicating their parsers.
     let empty = std::env::vars_os()
         .filter(|(name, value)| {
             name.to_str()
@@ -39,7 +37,6 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(1);
     }
-    // time's local-zone lookup must precede SSH readers and backup workers.
     keelhaul::ops::forget::local_offset();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,

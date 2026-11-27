@@ -28,7 +28,6 @@ pub enum Error {
 pub(super) fn kek(secret: &Secret, kdf: Option<&Kdf>) -> Result<[u8; 32], Error> {
     match (secret, kdf) {
         (Secret::Password(password), Some(kdf)) => {
-            // Validate attacker-controlled cost parameters before constructing Argon2.
             let salt = kdf.validate().map_err(Error::BadFormat)?;
             let params = Params::new(kdf.m_kib, kdf.t, kdf.p, Some(32))
                 .map_err(|e| Error::BadFormat(e.to_string()))?;
@@ -46,7 +45,6 @@ pub(super) fn kek(secret: &Secret, kdf: Option<&Kdf>) -> Result<[u8; 32], Error>
 }
 
 pub fn create(master: &MasterKey, secret: &Secret) -> Result<KeySlot, Error> {
-    // Production writers refuse empty passwords; readers still accept them.
     secret.validate_new()?;
     let kdf = match secret {
         Secret::Password(_) => {
@@ -83,7 +81,6 @@ pub fn unwrap(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
     Ok(master)
 }
 
-// Config authentication, rather than this redundant tag, authorizes recovery.
 pub(crate) fn unwrap_master(slot: &KeySlot, secret: &Secret) -> Result<MasterKey, Error> {
     if slot.kind != secret.kind() {
         return Err(Error::WrongKind);
@@ -99,7 +96,6 @@ pub(crate) fn unwrap_master(slot: &KeySlot, secret: &Secret) -> Result<MasterKey
     Ok(MasterKey(master))
 }
 
-/// SPEC §3 framing, independent of the secret that wraps this slot.
 pub fn check(slot: &KeySlot, key: &[u8; 32]) -> Result<String, Error> {
     Ok(check_hash(slot, key)?.to_hex().to_string())
 }

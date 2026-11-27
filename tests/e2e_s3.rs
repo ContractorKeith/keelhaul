@@ -110,7 +110,6 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        // Clean test buckets even after an assertion fails, without double-panicking.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.clean()));
         if result.is_err() && !std::thread::panicking() {
             panic!("S3 test bucket cleanup failed");
@@ -128,7 +127,6 @@ fn s3_conformance() {
     run_suite(&backend, true, |raw, bytes| {
         fixture.put(&format!("repo/nested/{raw}"), bytes)
     });
-    // A sibling repository in the same bucket must remain invisible and intact.
     fixture.put("repo/nested-sibling/config", b"sibling");
     assert!(
         backend
@@ -156,7 +154,6 @@ fn s3_retries_503_and_fails_fast_on_403() {
     assert!(error.to_string().contains("403"));
     assert_eq!(forbidden.requests.load(Ordering::Acquire), 1);
     assert_eq!(keelhaul::exit::code(Err(keelhaul::exit::Failure::Error)), 1);
-    // Also exercise a real signature rejection from versitygw.
     let backend = S3Backend::new({
         let mut config = S3Config::new(
             S3Location::parse(&format!(

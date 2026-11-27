@@ -1,8 +1,6 @@
 use super::*;
 #[test]
 fn gitignore_literal_braces_and_trailing_spaces() {
-    // Cross-checked with `git check-ignore --no-index`: braces are literal;
-    // unescaped trailing spaces disappear, while a backslash preserves one.
     let patterns =
         keelhaul::ops::backup::Patterns::new(&["{a,b}".into(), "trim   ".into(), "keep\\ ".into()])
             .unwrap();

@@ -21,7 +21,6 @@ fn shared_damaged_chunk_names_every_raw_path_and_snapshot_and_good_file_restores
         OsString::from_vec(vec![b'a', 0xff]),
         OsString::from_vec(vec![b'a', 0xfe]),
     ];
-    // APFS requires valid UTF-8 names. Shared-chunk salvage still runs on macOS.
     #[cfg(not(target_os = "linux"))]
     let names = [OsString::from("aé"), OsString::from("aø")];
     for name in &names {

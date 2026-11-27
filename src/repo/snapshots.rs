@@ -18,8 +18,6 @@ impl<B: Backend> Repository<B> {
     }
     pub fn scan_snapshots(&self) -> Result<SnapshotList, Error> {
         let mut candidates = self.backend.list(Kind::Snapshots)?;
-        // Backend mtimes prioritize reads, but only authenticated snapshot time
-        // determines the result. All candidates must be read to establish newest.
         candidates.sort_by(|a, b| b.modified.cmp(&a.modified).then(b.name.cmp(&a.name)));
         let mut result = SnapshotList {
             entries: Vec::new(),
@@ -85,7 +83,6 @@ impl<B: Backend> Repository<B> {
                 "snapshot prefix must be 8–64 lowercase hex characters".into(),
             ));
         }
-        // Resolve names first: unrelated damaged snapshots cannot block an ID read.
         let candidates = self.backend.list(Kind::Snapshots)?;
         let mut matches = candidates
             .iter()

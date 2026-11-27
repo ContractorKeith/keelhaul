@@ -1,4 +1,3 @@
-//! Stable damage documents shared by audits and restore.
 use crate::repo::Error;
 use serde::Serialize;
 
@@ -40,7 +39,6 @@ impl Damage {
             detail: detail.into(),
         }
     }
-    /// Preserve raw POSIX paths in machine-readable file identifiers.
     pub fn file(snapshot: &str, path: &std::path::Path, problem: &str) -> Self {
         use base64::Engine;
         use std::os::unix::ffi::OsStrExt;
@@ -81,7 +79,6 @@ impl std::fmt::Display for Damage {
     }
 }
 impl Report {
-    /// Collect repository damage, but propagate operational failures (exit 1).
     pub fn collect<T>(&mut self, result: Result<T, Error>) -> Result<Option<T>, Error> {
         match result {
             Ok(value) => Ok(Some(value)),

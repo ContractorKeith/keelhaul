@@ -1,4 +1,3 @@
-//! Secret flags take precedence over the entire group of environment sources.
 use super::Cli;
 use std::path::PathBuf;
 pub(super) fn resolve(cli: &mut Cli) {

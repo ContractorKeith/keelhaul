@@ -1,4 +1,3 @@
-//! Central command outcome to process exit-code mapping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
     Error,
@@ -19,7 +18,6 @@ pub const fn code(result: Result<(), Failure>) -> u8 {
     }
 }
 
-/// Classify typed causes even when callers add context or wrap an error.
 pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
     let mut current = Some(error);
     while let Some(cause) = current {
@@ -55,7 +53,6 @@ pub fn failure(error: &(dyn std::error::Error + 'static)) -> Failure {
     Failure::Error
 }
 
-/// Keep stderr diagnostics and JSON failures consistent across command paths.
 pub fn report(message: &str, failure: Failure, json: bool) {
     eprintln!("keelhaul: {message}");
     if json {

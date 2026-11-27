@@ -1,4 +1,3 @@
-//! Force a mixed data/tree pack: parallel backup scheduling must not define the oracle.
 #[path = "damage_support/mod.rs"]
 mod support;
 use keelhaul::{
@@ -48,7 +47,6 @@ fn deleting_mixed_pack_does_not_guess_files_below_its_missing_tree() {
             f.repo.backend.delete(&entry.name).unwrap();
         }
     }
-    // All file data and the nested tree share a pack; its ancestors stay separate.
     for (kind, id, payload) in &payloads {
         if *kind == BlobKind::Data || *id == nested {
             writer.add(*kind, payload).unwrap();

@@ -44,9 +44,6 @@ pub struct Repository<B> {
 }
 
 impl<B: Backend> Repository<B> {
-    /// Config wins the create-once race before any slot is stored.
-    /// A crash before the slot write leaves an unusable empty repository; delete
-    /// that directory before retrying init. Existing repositories are never reset.
     pub fn init(backend: B, secret: &Secret) -> Result<Self, Error> {
         secret.validate_new().map_err(slot::Error::from)?;
         for kind in Kind::ALL {
@@ -97,7 +94,6 @@ impl<B: Backend> Repository<B> {
         })
     }
 
-    /// Unlock independently of config so audits can collect config damage too.
     pub(crate) fn unlock(backend: &B, secret: &Secret) -> Result<MasterKey, Error> {
         let (master, opened_slot) = Self::unlock_with_slot(backend, secret)?;
         if let Some(slot) = opened_slot {
@@ -121,7 +117,6 @@ impl<B: Backend> Repository<B> {
         };
         for entry in entries {
             let bytes = backend.read(&entry.name)?;
-            // Invalid or nonmatching slots do not prevent a later valid slot unlocking.
             let Ok(slot) = KeySlot::parse(&bytes) else {
                 unreadable.push(entry.name.to_string());
                 continue;
@@ -139,8 +134,6 @@ impl<B: Backend> Repository<B> {
                     }
                     return Ok((key, None));
                 }
-                // Preserve an unwrapped key for audits of a damaged config. Open
-                // still authenticates and parses config before accepting this key.
                 if master.is_none() {
                     master = Some((key, Some(entry.name.to_string())));
                 }
@@ -257,7 +250,6 @@ pub(super) fn damage(object: &str, problem: &'static str, detail: &str) -> Error
     }
 }
 
-// Wrapping a collected audit finding must not repeat its object and cause.
 fn damage_detail<'a>(object: &str, problem: &str, detail: &'a str) -> &'a str {
     let detail = detail
         .strip_prefix(&format!("{object}: "))

@@ -1,4 +1,3 @@
-//! Descriptor-relative writes: every ancestor is opened with O_NOFOLLOW.
 mod preflight;
 mod publication;
 mod resume;
@@ -85,8 +84,6 @@ impl Destination {
             .ok_or_else(|| Error::Refused("restore path has no name".into()))?;
         Ok((self.directory(parent)?, name.into()))
     }
-    // Compare filesystem identities, rather than assuming a particular case or
-    // Unicode folding rule. Names are scoped to the pinned parent directory.
     pub fn check_collision(&self, path: &Path) -> Result<(), Error> {
         if path.as_os_str().is_empty() {
             return Ok(());
@@ -192,8 +189,6 @@ impl Destination {
             return Ok(false);
         }
         let (parent, name) = self.parent(path)?;
-        // A writer with access to the target can still replace the source between
-        // this identity check and linkat, causing the link to use their bytes.
         fs::linkat(&old_parent, old_name, &parent, &name, AtFlags::empty()).map_err(os)?;
         Ok(true)
     }

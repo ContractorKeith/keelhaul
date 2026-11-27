@@ -49,8 +49,6 @@ fn closed_stdout_is_quiet_success() {
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{:?}", output);
     assert!(output.stderr.is_empty(), "{:?}", output);
-    // A disconnected socket makes BrokenPipe deterministic before the child
-    // starts, including serde_json and repository error wrappers in key output.
     for args in [
         vec!["key", "list"],
         vec!["key", "list", "--json"],

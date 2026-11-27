@@ -99,7 +99,6 @@ fn refuses_skippable_only_frame_and_large_window_header() {
         open(&[4; 32], Label::Data, &stored),
         Err(Error::BadFormat(_))
     ));
-    // A streamed frame with descriptor 0x90 advertises a 256 MiB window.
     let mut frame = zstd::stream::encode_all(&vec![42; 8192][..], 3).unwrap();
     assert_eq!(
         frame[4] & 0x20,

@@ -1,4 +1,3 @@
-//! A tiny HTTP/1.1 fault proxy; preserves the signed Host header.
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},

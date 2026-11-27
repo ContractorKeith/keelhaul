@@ -2,8 +2,6 @@ use super::backend_suite::{assert_entries, name};
 use keelhaul::backend::{Backend, BackendError, Kind, ObjectName};
 
 pub fn large_listing(b: &dyn Backend) {
-    // S3's default ListObjectsV2 page limit is 1000. Write in reverse order so
-    // insertion ordering cannot accidentally satisfy the sorted-list contract.
     let expected: Vec<_> = (0..1003)
         .map(|id| (name(&format!("index/{id:064x}")), 1))
         .collect();
@@ -16,7 +14,6 @@ pub fn large_listing(b: &dyn Backend) {
         b.delete(&object).unwrap();
     }
     assert!(b.list(Kind::Index).unwrap().is_empty());
-    // Exercise both shard traversal and lexicographic ordering.
     let a = name(&format!("data/aa/{}", "aa".repeat(32)));
     let z = name(&format!("data/ff/{}", "ff".repeat(32)));
     b.write(&z, b"last").unwrap();
@@ -49,7 +46,6 @@ pub fn large_ranges(b: &dyn Backend) {
             "offset={offset}, len={len}"
         );
     }
-    // Same-size conflicting writes must still compare bytes.
     let other = vec![0; bytes.len()];
     assert!(matches!(
         b.write(&object, &other),
@@ -76,16 +72,13 @@ pub fn foreign_entries(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn
             format!("{directory}unknown"),
         ];
         if kind == Kind::Data {
-            raw_names.push(format!("data/ff/{id}")); // wrong shard
-            // On case-folding filesystems this aliases the valid lowercase ID.
-            // Only this fixture is omitted; memory and case-sensitive storage keep it.
+            raw_names.push(format!("data/ff/{id}"));
             if case_sensitive {
                 raw_names.push(format!("data/ab/{}", id.to_uppercase()));
             }
         }
         for raw in &raw_names {
             plant_raw(raw, b"partial");
-            // The typed read API refuses foreign names before any backend I/O.
             assert!(matches!(
                 ObjectName::new(raw),
                 Err(BackendError::InvalidName(_))
@@ -111,7 +104,6 @@ pub fn foreign_entries(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn
                 .iter()
                 .all(|entry| entry.size == 7 && entry.deletable)
         );
-        // Valid and foreign entries remain disjoint even when both exist.
         b.write(&name(&base), b"complete").unwrap();
         assert_entries(b, kind, &[(name(&base), 8)]);
         assert_eq!(b.list_foreign(kind).unwrap(), foreign);
@@ -122,7 +114,6 @@ pub fn foreign_entries(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn
         assert!(b.list_foreign(kind).unwrap().is_empty());
         b.delete(&name(&base)).unwrap();
     }
-    // Refuse traversal, absolute paths, unknown directories, and valid objects.
     for raw in [
         "",
         "/config.tmp-0123456789abcdef",
@@ -158,7 +149,6 @@ pub fn foreign_entries(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn
     }
 }
 
-// Nested files must neither be traversed nor accepted for raw deletion.
 pub fn foreign_depth(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
     let config = name("config");
     b.write(&config, b"preserve").unwrap();
@@ -177,7 +167,6 @@ pub fn foreign_depth(b: &dyn Backend, plant_raw: impl Fn(&str, &[u8])) {
     }
     for kind in Kind::ALL {
         for entry in b.list_foreign(kind).unwrap() {
-            // Directory-aware backends expose the parent as a note, never its children.
             assert!(
                 [
                     "keys/sub",

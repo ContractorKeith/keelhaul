@@ -1,8 +1,3 @@
-//! Oracle rules: AEAD body flips => blob undecryptable; only verify hashes packs.
-//! Invalid metadata ciphertext => hash-mismatch, except config (no hash name).
-//! A truncated envelope => bad-format; absent config/pack => missing. Indexed
-//! blobs without any available pack => dangling-reference, plus referring files
-//! in verify. Unreadable roots/indexes hide descendants; no descendant is guessed.
 use super::*;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use keelhaul::backend::{Backend, Kind, ObjectName};
@@ -38,7 +33,6 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
             v,
         );
     }
-    // A deleted snapshot's root remains metadata, even when nothing references it.
     f.reset();
     for e in f.repo.backend.list(Kind::Snapshots).unwrap() {
         f.repo.backend.delete(&e.name).unwrap();
@@ -177,7 +171,6 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
         e.clone(),
         e,
     );
-    // Slot check authenticates the wrapped tag and KDF costs without that secret.
     for cost in [false, true] {
         f.reset();
         let mut value: serde_json::Value = serde_json::from_slice(&f.bytes(&f.slot)).unwrap();
@@ -248,7 +241,6 @@ pub fn run_cases(f: &Fixture, seed: u64, r: [u8; 32]) {
     );
 }
 
-/// Deleted metadata hides descendants even when their chunks also occur elsewhere.
 pub fn delete_indexed_pack(f: &Fixture, seed: u64, name: &str) {
     f.reset();
     let store = BlobStore::load(&f.repo).unwrap();

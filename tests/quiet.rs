@@ -57,7 +57,6 @@ fn every_happy_command_is_quiet_but_damage_and_json_survive() {
     let id = slots["slots"][0]["id"].as_str().unwrap();
     let removed = run(&repo, &key, &["key", "remove", id]);
     assert!(removed.status.success() && removed.stdout.is_empty() && removed.stderr.is_empty());
-    // Continue with whichever secret remains after removing a slot in sorted order.
     let key = if run(&repo, &key, &["snapshots"]).status.success() {
         key
     } else {

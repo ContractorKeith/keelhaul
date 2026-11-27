@@ -87,6 +87,5 @@ fn supplied_local_offset_survives_a_running_backend_thread() {
     .unwrap();
     send.send(()).unwrap();
     thread.join().unwrap();
-    // Both timestamps are Nov 4 UTC, but Nov 3 / Nov 4 in New York.
     assert_eq!(report.groups[0].keep.len(), 2);
 }

@@ -1,4 +1,3 @@
-//! Preflight every destination, then publish only completely verified files.
 mod destination;
 mod files;
 mod plan;
@@ -64,7 +63,6 @@ pub fn restore_for_host<B: Backend>(
         restore_for_host_without_lock(repo, selector, target, includes, host)
     })
 }
-/// Read without a repository lock; callers must exclude concurrent writers.
 pub fn restore_for_host_without_lock<B: Backend>(
     repo: &Repository<B>,
     selector: &str,

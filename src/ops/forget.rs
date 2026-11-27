@@ -1,4 +1,3 @@
-//! Retention selects the newest member of occupied calendar buckets in each group.
 use crate::{
     backend::{Backend, ObjectName},
     format::snapshot::Snapshot,
@@ -108,13 +107,10 @@ pub fn forget<B: Backend>(repo: &Repository<B>, options: &Options) -> Result<Rep
     options.validate()?;
     let fallback = local_offset();
     forget_with_offsets(repo, options, |time| {
-        // time 0.3.55 separates the guarded TZ refresh from thread-safe
-        // localtime lookups. Preserve historical DST after startup refresh.
         fallback.and_then(|offset| UtcOffset::local_offset_at(time).ok().or(Some(offset)))
     })
 }
 static LOCAL_OFFSET: std::sync::OnceLock<Option<UtcOffset>> = std::sync::OnceLock::new();
-/// Call at process startup, before backends or workers spawn any threads.
 pub fn local_offset() -> Option<UtcOffset> {
     *LOCAL_OFFSET.get_or_init(|| {
         time::util::refresh_tz()?;

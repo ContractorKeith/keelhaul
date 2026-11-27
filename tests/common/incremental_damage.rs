@@ -53,7 +53,6 @@ fn damaged_parent_is_replaced_and_every_snapshot_restores_through_verified_copie
             original.tree, recovered.tree,
             "same plaintext IDs must acquire healthy stored copies"
         );
-        // Pin the damaged location as primary, independent of random index IDs.
         let mut reader = BlobStore::load(&repo).unwrap();
         reader.index.insert(
             (damaged.blob.kind, damaged.blob.id.clone()),

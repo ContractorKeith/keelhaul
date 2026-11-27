@@ -1,5 +1,3 @@
-//! Independent expected sets compare (object, kind, problem), not just object IDs.
-//! See damage_support/byte_cases.rs and authenticated.rs for each injection's oracle.
 #[path = "common/backup_fixture.rs"]
 #[allow(dead_code, reason = "shared round-trip helpers")]
 mod backup_fixture;

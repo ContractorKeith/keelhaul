@@ -51,7 +51,7 @@ fn heal_data_only_pack_then_restore_prune_verify() {
         .iter()
         .find(|((kind, _), loc)| {
             *kind == BlobKind::Data
-                && loc.blob.raw_length > 6 // B is six bytes; corrupt retained A.
+                && loc.blob.raw_length > 6
                 && !store
                     .index
                     .iter()

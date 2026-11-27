@@ -27,7 +27,6 @@ fn sparse_64_mib_uses_one_repeated_chunk() {
         .unwrap()
         .set_len(64 * 1024 * 1024)
         .unwrap();
-    // Pin gear so this assertion never depends on a randomly generated master key.
     use keelhaul::{
         backend::{Backend, ObjectName},
         crypto::{

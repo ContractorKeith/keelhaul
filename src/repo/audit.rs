@@ -1,4 +1,3 @@
-//! Read primitives shared by structural and full audits. Format parsing stays in format/.
 use super::{Error, objects::missing, open::damage};
 use crate::{
     backend::{Backend, ObjectName},

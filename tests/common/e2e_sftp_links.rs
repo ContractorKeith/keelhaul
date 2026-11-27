@@ -158,7 +158,6 @@ pub fn object_types_and_listing_context(config: &Path, root: &str) {
     remote(&["mkdir", &shard]);
     remote(&["chmod", "000", &shard]);
     let error = backend.list(Kind::Data).unwrap_err();
-    // Restore the fixture before inspecting assertions, so later cleanup is possible.
     remote(&["chmod", "755", &shard]);
     assert!(error.to_string().contains("data/cd"), "{error}");
     assert!(

@@ -1,4 +1,3 @@
-//! Real binary and scratch-only repository helpers for crash tests.
 use serde_json::Value;
 use std::{
     fs,
@@ -67,7 +66,6 @@ pub fn backup(root: &Path) -> Value {
         .unwrap())
 }
 pub fn check(root: &Path) {
-    // Notes about orphan packs/indexes are allowed; any nonzero exit is failure.
     let report = ok(command(root).arg("check").output().unwrap());
     assert!(report["damage"].as_array().unwrap().is_empty());
 }

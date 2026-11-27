@@ -29,7 +29,6 @@ pub(super) fn read(
     events: &SyncSender<Result<Event, Error>>,
 ) -> Result<(), Error> {
     if task.entry.links > 1 {
-        // Serialize linked inode reads so every alias gets one descriptor's metadata and bytes.
         let mut groups = hardlinks
             .lock()
             .map_err(|_| Error::Refused("hardlink cache mutex poisoned".into()))?;
@@ -88,7 +87,6 @@ fn read_one(
         previous_content,
         reuse: _,
     } = task;
-    // User file failures are skips; storage/pipeline failures abort the backup.
     let file = match super::resources::open_file(&path) {
         Ok(f) => f,
         Err(e) => {
@@ -110,7 +108,6 @@ fn read_one(
         );
     }
     send(events, Event::Read)?;
-    // Pin metadata to the descriptor, rather than the earlier walk observation.
     let name = entry
         .name_bytes()
         .map_err(|e| Error::Refused(e.to_string()))?;

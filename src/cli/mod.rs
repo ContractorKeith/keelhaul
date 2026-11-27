@@ -1,4 +1,3 @@
-// This scope includes the legacy backup renderer without changing its source.
 macro_rules! println {
     ($($arg:tt)*) => { crate::output::line(format_args!($($arg)*))? };
 }

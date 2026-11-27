@@ -128,7 +128,6 @@ fn latest_is_host_scoped_and_override_and_missing_host_are_explicit() {
     );
     let output = command(root, &["ls", "latest", "--host", "missing-host", "--json"]);
     assert_eq!(output.status.code(), Some(1));
-    // Removing the local snapshot must not silently select another host's backup.
     repo.backend
         .delete(&ObjectName::new(&format!("snapshots/{a}")).unwrap())
         .unwrap();

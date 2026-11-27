@@ -60,7 +60,6 @@ fn inaccessible_ancestor_is_skipped_while_good_roots_succeed_and_all_failed_writ
     fs::create_dir_all(blocked.join("inner")).unwrap();
     let denied = blocked.join("inner/file");
     fs::write(&denied, b"unreadable").unwrap();
-    // Root-run harnesses drop only the CLI subprocess so permissions are real.
     if uzers::get_effective_uid() == 0 {
         let mut pending = vec![root.clone()];
         while let Some(path) = pending.pop() {

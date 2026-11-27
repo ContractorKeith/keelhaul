@@ -74,7 +74,6 @@ fn decode_bytes(text: &Option<String>, b64: &Option<String>) -> Result<Vec<u8>, 
     }
 }
 impl Entry {
-    /// Validate references when the caller also has authenticated chunk lengths.
     pub fn validate_content_lengths(
         &self,
         mut length: impl FnMut(&str) -> Result<u64, ParseError>,
@@ -164,7 +163,6 @@ impl Tree {
         }
         Ok(tree)
     }
-    /// Restore salvages individually valid entries without trusting malformed names.
     pub fn salvage(bytes: &[u8]) -> Result<(Self, Vec<String>), ParseError> {
         #[derive(Deserialize)]
         struct Raw {

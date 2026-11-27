@@ -61,7 +61,6 @@ impl Patterns {
     }
 }
 
-// Gitignore treats braces literally and discards only unescaped trailing spaces.
 fn gitignore_pattern(raw: &str) -> String {
     let mut end = raw.len();
     while raw.as_bytes().get(end.wrapping_sub(1)) == Some(&b' ') {

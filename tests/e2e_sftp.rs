@@ -43,7 +43,6 @@ fn sftp_e2e_conformance_and_failures() {
     if !docker::enabled() {
         return;
     }
-    // A requested run against a stopped container must fail before fixture setup.
     docker::require_sshd();
     let scratch = tempfile::tempdir().unwrap();
     run(Command::new("ssh-keygen")
@@ -85,7 +84,6 @@ fn sftp_e2e_conformance_and_failures() {
     links::run(&config_path, &root);
     links::object_types_and_listing_context(&config_path, &root);
 
-    // Independent connections also obey create-once publication.
     let other = SftpBackend::with_client(root.clone(), connect(&config_path, &root)).unwrap();
     let object = ObjectName::new("config").unwrap();
     let barrier = std::sync::Barrier::new(2);
@@ -102,7 +100,6 @@ fn sftp_e2e_conformance_and_failures() {
     });
     backend.delete(&object).unwrap();
 
-    // Observe the actual temporary upload before interrupting its transport.
     let doomed_root = format!("{root}-interrupted");
     let doomed =
         SftpBackend::with_client(doomed_root.clone(), connect(&config_path, &doomed_root)).unwrap();

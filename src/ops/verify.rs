@@ -1,4 +1,3 @@
-//! Whole-pack hashing and independent verification of every stored blob.
 use super::check::State;
 use crate::{
     backend::Backend,
@@ -53,7 +52,6 @@ pub fn verify_backend<B: Backend>(
         run(State::new(backend, master.subkeys()), subset, damage)
     })
 }
-/// Audit read-only storage without acquiring a repository lock.
 pub fn verify_backend_without_lock<B: Backend>(
     backend: &B,
     secret: &Secret,
@@ -93,7 +91,6 @@ fn run<B: Backend>(
                 "stored pack ID differs",
             );
         }
-        // A corrupt header must not hide the independently indexed blobs.
         let indexed = indexed_packs.get(id.as_str());
         let mut blobs = HashMap::new();
         if let Some(header) = header {
@@ -105,8 +102,6 @@ fn run<B: Backend>(
             if header.is_none() {
                 blobs.extend(indexed.iter().map(|(key, blob)| (*key, *blob)));
             } else {
-                // A valid header is authoritative. A bad cached descriptor is
-                // index damage, not proof that the stored blob is corrupt.
                 for (key, blob) in indexed {
                     if !blobs.contains_key(key) {
                         state.bad.insert((blob.kind, blob.id.clone()));
@@ -152,7 +147,6 @@ fn run<B: Backend>(
             }
         }
     }
-    // One healthy duplicate is sufficient to resolve a file.
     state.bad.retain(|k| {
         !good.contains(k)
             && state.live.get(k).is_none_or(|locations| {
@@ -164,7 +158,6 @@ fn run<B: Backend>(
     state.finish(true)
 }
 
-// Include lengths and offsets: conflicting index descriptors need independent reads.
 fn descriptor(blob: &Blob) -> (BlobKind, &str, u64, u64, u64) {
     (
         blob.kind,

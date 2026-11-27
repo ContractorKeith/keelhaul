@@ -20,7 +20,6 @@ pub mod host;
 pub mod chunker;
 pub mod damage;
 
-/// Informational diagnostics respect the command output context.
 #[macro_export]
 macro_rules! warning {
     ($($arg:tt)*) => { $crate::output::warning(format_args!($($arg)*)) };
