@@ -9,7 +9,6 @@ pub(super) fn at(path: &Path, error: io::Error) -> BackendError {
     BackendError::from(error).context(None, Some(path))
 }
 
-// Existing directories need no sync. Root creation tolerates an unreadable parent.
 pub(super) fn ensure_directory(path: &Path, root: &Path) -> Result<(), BackendError> {
     if path.is_dir() {
         return Ok(());
@@ -71,11 +70,10 @@ pub(super) fn lock_directory(
 }
 
 pub(super) fn lock_result(result: io::Result<()>) -> io::Result<()> {
-    // NFS/CIFS may lack locks; rename stays atomic for identical content-addressed writes.
     #[cfg(target_os = "linux")]
-    const UNAVAILABLE: [i32; 2] = [37, 95]; // ENOLCK, EOPNOTSUPP
+    const UNAVAILABLE: [i32; 2] = [37, 95];
     #[cfg(target_os = "macos")]
-    const UNAVAILABLE: [i32; 2] = [77, 45]; // ENOLCK, EOPNOTSUPP
+    const UNAVAILABLE: [i32; 2] = [77, 45];
     match result {
         Err(error)
             if error.kind() == io::ErrorKind::Unsupported

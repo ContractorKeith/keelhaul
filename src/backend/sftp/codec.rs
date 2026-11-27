@@ -1,4 +1,3 @@
-//! Bounded SFTP v3 framing and primitive fields (network byte order).
 use std::io::{self, Read, Write};
 pub const MAX_PACKET: usize = 256 * 1024;
 pub fn invalid(message: &str) -> io::Error {
@@ -139,7 +138,6 @@ mod tests {
     use super::*;
     #[test]
     fn sftp_packet_fixtures() {
-        // Literal v3 wire fixtures, with request ID 7 and real type-specific bodies.
         for (kind, hex) in [
             (1, "000000050100000003"),
             (

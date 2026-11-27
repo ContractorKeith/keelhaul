@@ -15,7 +15,6 @@ impl S3Location {
     pub fn parse(repo: &str) -> Result<Self, BackendError> {
         let invalid = || error("expected s3:https://endpoint/bucket[/prefix]");
         let rest = repo.strip_prefix("s3:").ok_or_else(invalid)?;
-        // Use the same URL parser as the signer, without adding a second URL dependency.
         let parsed = Bucket::new(
             rest.parse().map_err(|_| invalid())?,
             UrlStyle::Path,
@@ -24,7 +23,6 @@ impl S3Location {
         )
         .map_err(|_| invalid())?;
         let url = parsed.base_url();
-        // Check the original authority too: Bucket deliberately strips userinfo/query.
         if rest.contains(['?', '#', '\\'])
             || rest.split('/').nth(2).is_some_and(|s| s.contains('@'))
         {
@@ -105,16 +103,12 @@ pub struct S3Config {
     pub location: S3Location,
     credentials: Credentials,
     pub region: String,
-    /// Per-attempt timeout (`KEELHAUL_S3_TIMEOUT_SECS`, 1..=3600, default 20 seconds).
-    /// Up to five attempts run, with capped, jittered backoff between attempts.
     pub timeout: Duration,
-    /// Overall HTTP operation deadline across retries and backoff (default 120 seconds).
     pub deadline: Duration,
     pub verbose: bool,
 }
 
 impl S3Config {
-    /// Credentials remain private and Debug always redacts them.
     /// ```compile_fail
     /// use keelhaul::backend::s3::{S3Config, S3Location};
     /// let config = S3Config::new(S3Location::parse("s3:https://host/bucket").unwrap(),

@@ -2,7 +2,6 @@ use super::url::SftpUrl;
 use std::{ffi::OsStr, process::Command};
 pub(super) fn command(url: &SftpUrl, executable: impl AsRef<OsStr>, args: &[String]) -> Command {
     let mut command = Command::new(executable);
-    // ssh uses the first value: explicit user arguments override these defaults.
     command.args(args).args([
         "-o",
         "ServerAliveInterval=15",

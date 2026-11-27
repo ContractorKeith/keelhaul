@@ -1,7 +1,6 @@
 use super::{error, http::Response};
 use crate::backend::BackendError;
 
-// Validate the server's clipped range; servers ignoring Range return a full body.
 pub(super) fn bytes(r: Response, offset: u64, requested_end: u64) -> Result<Vec<u8>, BackendError> {
     let invalid = || error("S3 returned invalid ranged response");
     match r.status {

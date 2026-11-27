@@ -26,7 +26,6 @@ fn s3_range_responses_need_one_get_and_validate_clipping() {
     for _ in 0..3 {
         assert!(backend.read_range(&name, 4, 20).is_err());
     }
-    // Even a missing name needs no request for an empty range.
     assert!(backend.read_range(&name, 0, 0).unwrap().is_empty());
     let requests = worker.join().unwrap();
     assert_eq!(requests.len(), 7);
@@ -45,8 +44,6 @@ fn s3_fallback_eight_distinct_uploads_overlap_after_one_probe() {
     let endpoint = format!("s3:http://{}/bucket/repo", listener.local_addr().unwrap());
     let overlap = Arc::new((Mutex::new((0_usize, 0_usize)), Condvar::new()));
     let observed = overlap.clone();
-    // Three probe requests followed by eight HEAD/PUT pairs. Every accepted
-    // connection has its own worker so a backend lock is observable on the wire.
     let server = thread::spawn(move || {
         thread::scope(|scope| {
             let mut handlers = Vec::new();
@@ -81,8 +78,6 @@ fn s3_fallback_eight_distinct_uploads_overlap_after_one_probe() {
                         state.0 += 1;
                         state.1 = state.1.max(state.0);
                         ready.notify_all();
-                        // A serialized implementation times out with peak == 1,
-                        // instead of deadlocking the test forever.
                         let (mut state, _) = ready
                             .wait_timeout_while(state, Duration::from_secs(1), |s| s.1 < 2)
                             .unwrap();

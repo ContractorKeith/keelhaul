@@ -1,4 +1,3 @@
-//! Opt-in fault injection. Ordinary builds neither compile nor read this hook.
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -102,8 +101,6 @@ impl<B: Backend> Backend for FaultBackend<B> {
         self.inner.stat(name)
     }
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError> {
-        // Delete faults fire after the durable effect. This catches code that
-        // deletes references before publishing their replacement index.
         self.inner.delete(name)?;
         self.hit("delete").map_err(|e| self.object_context(name, e))
     }

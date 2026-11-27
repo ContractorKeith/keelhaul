@@ -91,7 +91,6 @@ impl Client {
             if let Some(error) = failure {
                 return Err(error);
             }
-            // A server may legally return short DATA. Reissue its missing suffix.
             for (_, (mut data, count)) in chunks {
                 if data.len() < count as usize {
                     while data.len() < count as usize {

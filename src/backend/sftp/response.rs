@@ -1,4 +1,3 @@
-//! Validate a whole response before any operation consumes it.
 use super::codec::{self, Attrs, Fields, Packet};
 use std::io;
 pub(super) fn validate(request: u8, packet: &Packet) -> io::Result<()> {

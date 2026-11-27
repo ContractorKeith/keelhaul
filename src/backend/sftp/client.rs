@@ -1,4 +1,3 @@
-//! Owns the ssh child and a bounded synchronous request stream.
 use super::{
     codec::{self, Fields, Packet, string, u32_field},
     url::SftpUrl,
@@ -52,7 +51,6 @@ impl Client {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
-        // All three pipes are guaranteed by Stdio::piped above.
         let input = child.stdin.take().expect("piped stdin");
         let output = child.stdout.take().expect("piped stdout");
         let mut stderr = child.stderr.take().expect("piped stderr");
@@ -126,7 +124,6 @@ impl Client {
             ),
         )
     }
-    // A failed operation leaves no live child. The next request starts a fresh session.
     fn reconnect(&mut self) -> io::Result<()> {
         let mut command = Command::new(self.command.get_program());
         command.args(self.command.get_args());
@@ -147,7 +144,6 @@ impl Client {
         Ok(())
     }
     pub(super) fn finish<T>(&mut self, result: io::Result<T>) -> io::Result<T> {
-        // A valid STATUS is an operation result; it does not corrupt the stream.
         result.map_err(|error| {
             if error.kind() == io::ErrorKind::InvalidData {
                 self.abort(error)
@@ -201,7 +197,6 @@ impl Client {
         Ok(packet)
     }
     pub fn close(&mut self, handle: &[u8]) -> io::Result<()> {
-        // Handles from an aborted session cannot be closed on a fresh connection.
         if self.failed {
             return Err(io::ErrorKind::BrokenPipe.into());
         }

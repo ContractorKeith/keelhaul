@@ -89,7 +89,6 @@ fn s3_body_cap_has_an_explicit_nonretryable_error() {
             stream.read_exact(&mut byte).unwrap();
             header.push(byte[0]);
         }
-        // Headers alone exercise the real limit without a >100 MiB fixture.
         write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

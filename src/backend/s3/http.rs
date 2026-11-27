@@ -15,7 +15,6 @@ pub(super) struct Response {
 }
 
 impl S3Backend {
-    // Never retain HTTP errors or response text: either can contain presigned URLs.
     pub(super) fn request<'a, A: S3Action<'a>>(
         &self,
         mut action: A,

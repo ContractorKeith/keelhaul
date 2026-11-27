@@ -156,19 +156,17 @@ impl Client {
         Ok(entries)
     }
     pub fn write_file(&mut self, path: &str, bytes: &[u8]) -> io::Result<()> {
-        let handle = self.open(path, 2 | 8 | 32)?; // WRITE | CREAT | EXCL
+        let handle = self.open(path, 2 | 8 | 32)?;
         let result = self.write_handle(&handle, bytes);
         let close = self.close(&handle);
         result?;
         close
     }
     pub fn read_file(&mut self, path: &str, offset: u64, len: u64) -> io::Result<Vec<u8>> {
-        // Reject special files before OPEN; a FIFO could otherwise block the server.
         self.object_size(path)?;
         let handle = self.open(path, 1)?;
         self.read_open(handle, offset, len)
     }
-    // Absence is a successful probe, avoiding reconnects for every new object.
     fn open_optional(&mut self, path: &str) -> io::Result<Option<Vec<u8>>> {
         let mut body = Vec::new();
         string(&mut body, path.as_bytes());

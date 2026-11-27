@@ -1,4 +1,3 @@
-//! Path-style S3, signed with rusty-s3 and sent synchronously over rustls.
 mod config;
 mod deadline;
 mod error_code;
@@ -56,9 +55,6 @@ impl S3Backend {
         }
     }
 
-    // Probe an isolated temporary object, so servers silently ignoring the header
-    // are detected too. If killed before DELETE, SPEC §13 lets prune remove
-    // this temporary object once it is older than 30 minutes.
     fn detect_conditional(&self) -> Result<bool, BackendError> {
         let mut nonce = [0; 8];
         getrandom::fill(&mut nonce).map_err(|_| error("S3 probe nonce generation failed"))?;
@@ -106,8 +102,6 @@ impl S3Backend {
 }
 
 impl Backend for S3Backend {
-    /// Create-once is exact only with conditional PUT; otherwise concurrent init
-    /// of one repository is unsafe because HEAD-then-PUT cannot exclude writers.
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
         let mut state = self
             .conditional
@@ -122,9 +116,6 @@ impl Backend for S3Backend {
             }
         };
         drop(state);
-        // Content-addressed names imply identical bytes for racing writers.
-        // Config and key slots are initialized once, so HEAD-then-PUT is acceptable
-        // without serializing uploads when conditional PUT is unavailable.
         let key = self.key(name.as_str());
         if !conditional {
             match self.stat(name) {

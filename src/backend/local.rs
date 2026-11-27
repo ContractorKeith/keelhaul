@@ -22,7 +22,6 @@ impl LocalBackend {
         })
     }
 
-    /// Open an existing repository without creating any directories.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, BackendError> {
         let backend = Self {
             root: root.as_ref().to_path_buf(),
@@ -44,8 +43,6 @@ impl LocalBackend {
         Err(BackendError::NotFound(config))
     }
 
-    /// Resolve symlinked parents before deciding whether a new secret would
-    /// be stored inside this local repository.
     pub fn contains_destination(&self, path: &Path) -> Result<bool, BackendError> {
         let root = fs::canonicalize(&self.root).map_err(|e| at(&self.root, e))?;
         let parent = path
@@ -88,7 +85,6 @@ impl LocalBackend {
         lock_directory(&directory, parent, self.lock_timeout)?;
         match fs::metadata(path) {
             Ok(metadata) => {
-                // Comparing an idempotent retry can read a whole pack; do it unlocked.
                 lock_result(directory.unlock()).map_err(|e| at(parent, e))?;
                 if metadata.len() != bytes.len() as u64 {
                     return Err(BackendError::AlreadyExists(name.clone()));
@@ -112,8 +108,6 @@ impl LocalBackend {
     }
 
     fn delete_path(&self, path: &Path) -> Result<(), BackendError> {
-        // Failed publication may clean up an object that never existed. Avoid a
-        // second directory-lock deadline when there is nothing to delete.
         match fs::symlink_metadata(path) {
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),

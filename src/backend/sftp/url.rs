@@ -17,7 +17,6 @@ impl SftpUrl {
             (&rest[..split], rest[split + 1..].to_owned(), false)
         };
         let host_start = authority.rfind('@').map_or(0, |i| i + 1);
-        // A leading @ has an empty username.
         if host_start == 1 {
             return Err(bad());
         }

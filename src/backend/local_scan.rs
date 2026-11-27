@@ -10,7 +10,6 @@ pub(super) struct ScannedEntry {
     pub foreign: ForeignEntry,
 }
 
-// The storage layout is trusted: follow links, but only at the fixed layout depths.
 pub(super) fn scan(root: &Path, kind: Kind) -> Result<Vec<ScannedEntry>, BackendError> {
     let directory = root.join(kind.directory());
     let mut entries = Vec::new();
@@ -57,8 +56,6 @@ fn scan_leaves(
                 record(root, &path, Some(metadata), object, entries)?;
             }
             Ok(metadata) => {
-                // Layout directories are traversed by their own kind. Object-depth
-                // directories are foreign entries; never descend into them.
                 if kind == Kind::Config
                     && child.file_name().to_str().is_some_and(|n| {
                         matches!(n, "keys" | "data" | "index" | "snapshots" | "locks")
@@ -96,7 +93,6 @@ fn children(
 }
 
 fn broken_link(path: &Path, error: &io::Error) -> bool {
-    // ELOOP is 40 on Linux and 62 on macOS.
     #[cfg(target_os = "linux")]
     const ELOOP: i32 = 40;
     #[cfg(target_os = "macos")]

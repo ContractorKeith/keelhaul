@@ -1,4 +1,3 @@
-//! Blocking storage of validated repository object names and opaque bytes.
 mod boxed;
 #[cfg(any(test, feature = "fault-injection"))]
 pub mod fault;
@@ -49,7 +48,6 @@ fn display_backend(error: &BackendError) -> String {
             }
             if let Some(path) = path {
                 let path = path.display().to_string();
-                // Some causes, including a busy directory, already name the path.
                 if !detail.contains(&path) {
                     text.push_str(&format!(" at {path}"));
                 }
@@ -112,7 +110,6 @@ impl ObjectName {
     }
 
     pub fn kind(&self) -> Kind {
-        // Construction has validated the complete namespace.
         match self.0.split('/').next() {
             Some("config") => Kind::Config,
             Some("keys") => Kind::Keys,
@@ -178,18 +175,13 @@ pub struct Entry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForeignEntry {
-    /// Display name; lossy or otherwise unsafe names cannot be deleted.
     pub raw: String,
     pub deletable: bool,
     pub size: u64,
     pub modified: Option<SystemTime>,
 }
 
-/// Writes are create-once: an identical retry succeeds; different bytes fail.
-/// Ranges are clipped at EOF, including offsets beyond EOF. Lists are sorted by name.
 pub trait Backend: Send + Sync {
-    /// Whether a local secret destination lies inside this repository.
-    /// Remote storage cannot contain a local filesystem destination.
     fn contains_destination(&self, _path: &Path) -> Result<bool, BackendError> {
         Ok(false)
     }
@@ -199,8 +191,6 @@ pub trait Backend: Send + Sync {
     -> Result<Vec<u8>, BackendError>;
     fn list(&self, kind: Kind) -> Result<Vec<Entry>, BackendError>;
     fn list_foreign(&self, kind: Kind) -> Result<Vec<ForeignEntry>, BackendError>;
-    /// Deletes safe, non-object names only at the fixed repository object depths.
-    /// Both deletion operations are idempotent when the target is missing.
     fn delete_foreign(&self, raw: &str) -> Result<(), BackendError>;
     fn stat(&self, name: &ObjectName) -> Result<u64, BackendError>;
     fn delete(&self, name: &ObjectName) -> Result<(), BackendError>;
