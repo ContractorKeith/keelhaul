@@ -34,13 +34,12 @@ fn resume_skips_only_identical_regular_files_and_cleans_stale_temps() {
     assert!(!stale.exists());
     assert!(unrelated.exists());
     assert_eq!(std::fs::read(out.join("b")).unwrap(), b"second");
-    std::fs::write(out.join("a"), b"changed!").unwrap(); // Same size, wrong bytes.
+    std::fs::write(out.join("a"), b"changed!").unwrap();
     std::fs::remove_file(out.join("b")).unwrap();
     std::os::unix::fs::symlink(source.join("b"), out.join("b")).unwrap();
     let report = restore_with_options(&repo, "latest", &target, &[], &options).unwrap();
     assert_eq!(report.failed.len(), 2, "{report:?}");
     assert_eq!(std::fs::read(out.join("a")).unwrap(), b"changed!");
-    // A single-file include still preserves ancestor mtimes while cleaning temps.
     std::fs::write(&stale, b"stale").unwrap();
     let stamp = filetime::FileTime::from_unix_time(1234567890, 123456789);
     filetime::set_file_mtime(&out, stamp).unwrap();

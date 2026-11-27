@@ -1,4 +1,3 @@
-//! Regression for the SPEC §11 suspended-backup publication window.
 use keelhaul::{
     backend::{
         Backend, BackendError, Entry, ForeignEntry, Kind, ObjectName, memory::MemoryBackend,
@@ -100,8 +99,6 @@ fn stale_backup_blocks_prune_and_unlock_prune_is_caught_at_publication() {
         reached = repo.backend.reached.1.wait(reached).unwrap();
     }
     drop(reached);
-    // Snapshot publication has begun, after SPEC §11's required self-check.
-    // Advance the clock by 30m+1s while the process is suspended at that point.
     clock.0.store(now, Ordering::SeqCst);
     assert_eq!(repo.backend.list(Kind::Snapshots).unwrap().len(), 0);
     assert!(!repo.backend.list(Kind::Index).unwrap().is_empty());

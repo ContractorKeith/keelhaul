@@ -50,8 +50,6 @@ fn overlapping_roots_keep_only_covering_root() {
 #[test]
 fn one_file_system_prunes_a_different_device_but_allows_it_as_its_own_root() {
     use std::os::unix::fs::MetadataExt;
-    // /dev is a separate mount in Linux CI. Whitelist only the empty /dev
-    // directory: no device, home, or user file is opened by this fixture.
     if fs::metadata("/").unwrap().dev() == fs::metadata("/dev").unwrap().dev() {
         return;
     }

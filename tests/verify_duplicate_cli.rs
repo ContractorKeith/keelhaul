@@ -1,4 +1,3 @@
-//! Verify's any-good-copy decision is separate from the general reader fallback.
 use keelhaul::{
     backend::{Backend, Kind, local::LocalBackend},
     crypto::{
@@ -73,8 +72,6 @@ impl Fixture {
         repo.backend
             .write(&pack_name(&copy).unwrap(), &bytes)
             .unwrap();
-        // A combined replacement index fixes preferred-location order: the bad
-        // original is first, and the freshly sealed duplicate is second.
         let indexes = repo.backend.list(Kind::Index).unwrap();
         let mut combined = Index {
             version: 1,
@@ -153,7 +150,6 @@ fn verify_names_the_bad_pack_without_condemning_a_file_that_has_a_good_copy() {
         && d["problem"] == "undecryptable"
         && d["detail"].as_str().unwrap().contains(corrupt.as_str())));
     assert!(!damage.iter().any(|d| d["kind"] == "file"));
-    // Only when both indexed copies fail does the referring file become damaged.
     let second = pack_name(&f.copy).unwrap();
     let path = f.repository.join(second.as_str());
     let mut bytes = fs::read(&path).unwrap();

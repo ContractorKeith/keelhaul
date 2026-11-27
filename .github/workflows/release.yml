@@ -24,7 +24,6 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: scripts/accept.sh
-      # crates.io publishing is manual (docs/RELEASING.md); prove the package builds first.
       - name: Package for crates.io
         if: runner.os == 'Linux'
         run: cargo publish --dry-run --locked
@@ -64,7 +63,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
-      # Zig supplies the C cross-compiler for bundled zstd as well as the linker.
       - name: Install pinned musl cross toolchain
         if: matrix.os == 'linux'
         run: |
@@ -87,15 +85,12 @@ jobs:
           binary="target/$TARGET/release/keelhaul"
           if [[ "$RELEASE_OS" == linux ]]; then
             objcopy --strip-all "$binary" "$binary.stripped" || {
-              # GNU objcopy on x86 runners may not support AArch64.
               sudo apt-get update
               sudo apt-get install -y binutils-aarch64-linux-gnu
               aarch64-linux-gnu-objcopy --strip-all "$binary" "$binary.stripped"
             }
             mv "$binary.stripped" "$binary"
             file "$binary"
-            # A static PIE may have a DYNAMIC section, but must have neither a
-            # program interpreter nor any shared-library dependencies.
             headers="$(readelf -l "$binary")"
             libraries="$(readelf -d "$binary")"
             if grep -q INTERP <<< "$headers" || grep -q NEEDED <<< "$libraries"; then
@@ -195,7 +190,6 @@ jobs:
                   notes.append(line)
           if not found or not '\n'.join(notes).strip():
               raise SystemExit(f'Missing changelog notes for {version}')
-          # Say exactly what this workflow ships; brew and cargo follow by hand.
           assets = sorted(p.name for p in Path('dist').iterdir())
           notes += ['', '### Assets', '']
           notes += [f'- `{name}`' for name in assets]

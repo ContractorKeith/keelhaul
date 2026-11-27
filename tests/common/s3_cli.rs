@@ -88,7 +88,6 @@ fn s3_real_cli_init_add_key_and_list_json() {
         .unwrap();
     let new_id = json(added, 0)["id"].as_str().unwrap().to_owned();
     assert_eq!(std::fs::metadata(&key).unwrap().len(), 32);
-    // Opening with the new key proves the new slot can unlock the S3 repository.
     let listing = command(&repo, root)
         .arg("--key-file")
         .arg(&key)

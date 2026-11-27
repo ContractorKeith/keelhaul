@@ -1,4 +1,3 @@
-//! Seeded process kills with explicit durability and flushed-index reuse assertions.
 #[path = "common/seed.rs"]
 mod seed;
 #[path = "common/crash_support.rs"]
@@ -36,7 +35,6 @@ fn initialize(root: &Path) {
         &serde_json::to_vec(&repo.config).unwrap(),
     )
     .unwrap();
-    // Fixture-only replacement, before any backup; normal writes remain create-once.
     fs::write(root.join("repo/config"), config).unwrap();
 }
 fn indexed(root: &Path) -> usize {
@@ -115,8 +113,6 @@ fn exercise(root: &Path, delay: Duration, fault: Option<(&str, Kind, usize)>) ->
         .arg("--force-rehash")
         .output()
         .unwrap());
-    // One exact MIN-sized chunk per file. Only the unindexed tail may be stored;
-    // 64 KiB additionally bounds both directory trees, including envelope overhead.
     assert_eq!(
         report["summary"]["data_blobs_added"].as_u64().unwrap(),
         (FILES - flushed) as u64,
@@ -145,7 +141,7 @@ fn seeded_sigkill_backup_loop() {
         50
     };
     eprintln!("backup crash loop seed={seed}, iterations={iterations}");
-    binary(); // Compile before measuring the actual initial backup duration.
+    binary();
     let scratch = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(scratch.path()).unwrap();
     fs::write(root.join("key"), [17; 32]).unwrap();
@@ -165,9 +161,6 @@ fn seeded_sigkill_backup_loop() {
     assert_eq!(indexed(&root), FILES);
     fs::remove_dir_all(root.join("repo")).unwrap();
     let start = Instant::now();
-    // Durability/resume sentinels make the two ordering mutations deterministic:
-    // a stalled first pack must not enter an index; a stalled ninth pack leaves
-    // the first eight-pack index reusable. Random kills below cover normal I/O.
     for (hook, kind, minimum) in [
         ("write:2:hang", Kind::Data, 7),
         ("write:11:hang", Kind::Index, 1),
@@ -240,8 +233,6 @@ fn flushed_index_survives_sigkill_before_snapshot() {
     let scratch = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(scratch.path()).unwrap();
     fixture(&root);
-    // Four 4 MiB random files and a small tree fit in two packs. The fifth
-    // write hangs at the snapshot, after both packs and the index are durable.
     let mut child = command(&root)
         .env("KEELHAUL_FAULT", "write:5:hang")
         .arg("backup")
