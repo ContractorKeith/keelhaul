@@ -140,16 +140,13 @@ impl<B: Backend> Repository<B> {
             }
             parsed.push((entry.name.to_string(), slot));
         }
-        if let Some((key, opened)) = &mut master {
-            // A sole slot (or slots agreeing on the same master key) identifies
-            // config damage. A foreign slot disagrees with the repository's
-            // other slots as well as failing config authentication.
-            if !parsed.iter().any(|(name, slot)| {
+        if let Some((key, opened)) = &mut master
+            && !parsed.iter().any(|(name, slot)| {
                 Some(name) != opened.as_ref()
                     && slot::verify_check(slot, &key.subkeys().key_slot_check).is_err()
-            }) {
-                *opened = None;
-            }
+            })
+        {
+            *opened = None;
         }
         master.ok_or_else(|| {
             if unreadable.is_empty() {

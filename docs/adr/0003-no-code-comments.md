@@ -1,0 +1,5 @@
+# No code comments; decisions live in ADRs
+
+keelhaul's code carries no comments. A comment either repeats the code (tautology), drifts from it (stale), excuses a shortcut that should be fixed instead (excuse), or records a decision. Decisions go in `docs/adr/`, where they are reviewed, grouped by subject and kept in one place; shortcuts become GitHub issues labelled `comment-debt`. `tests/no_comments.rs` enforces this as a ratchet against `tests/comment_baseline.txt`: no file may gain comment lines, and a file that loses some must lower its baseline in the same change. The `delete-comment` skill (`.agents/skills/delete-comment/`) repeats the sweep.
+
+Two kinds of comment stay until they can move without changing behaviour: clap `///` on `derive(Parser, Args, Subcommand)` items, which is the `--help` text, and the `compile_fail` doc test in `src/backend/s3/config.rs`, which is a test. The cost is that a reader must open an ADR to learn why code is shaped as it is; the ADRs name the module they govern so that lookup is a search, not an archaeology dig.
