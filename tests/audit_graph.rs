@@ -53,7 +53,7 @@ fn wrong_blob_type_file_sizes_and_missing_root_entries_are_metadata_damage() {
             vec![]
         } else {
             vec![entry(
-                serde_json::json!({"type":"file","size":6,"content":[content.clone()]}),
+                serde_json::json!({"type":"file","size":6,"content":[content]}),
             )]
         };
         let tree = store

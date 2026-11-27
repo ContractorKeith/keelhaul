@@ -1,4 +1,4 @@
-#[expect(
+#[allow(
     clippy::explicit_write,
     reason = "print replay seeds even when libtest captures successful test output"
 )]
