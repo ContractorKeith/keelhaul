@@ -16,8 +16,11 @@ zero.
 Argument: paths or globs (default: every file listed in `tests/comment_baseline.txt`).
 Start from the baseline; it is the inventory. Largest counts first.
 
-What counts: Rust `//`, `/* */`, `///`, `//!`; `#` in shell, Python and YAML (not the
-shebang). Not comments: `#[allow(..., reason = "...")]`, string contents.
+What counts: Rust `//`, `/* */`, `///`, `//!` (string-aware); in shell, Python and YAML, any
+line whose first non-blank character is `#`, except a line-1 shebang. The `#` counter is
+line-based: it misses trailing `# ...` and counts `#` lines inside heredocs, docstrings and
+YAML block scalars. Only git-tracked files are counted. Not comments:
+`#[allow(..., reason = "...")]`, Rust string contents.
 
 ## Categorise every block
 
@@ -67,8 +70,11 @@ git diff tests/comment_baseline.txt            # every line must go down or disa
 scripts/accept.sh
 ```
 
-The diff of a sweep is deletions only, plus new ADR files and the baseline. `git diff -U0
--- src tests | grep '^+[^+]'` should print nothing except clap help moved into attributes.
+The update refuses to raise the total, so it cannot launder a new comment; a rename moves
+a file's count to its new path. The diff of a sweep is deletions only, plus new ADR files
+and the baseline. `git diff -U0 -- src tests ':!tests/comment_baseline.txt' | grep
+'^+[^+]'` should print nothing except trailing-comment lines with the comment stripped and
+clap help moved into attributes.
 
 ## Parallel sweeps
 

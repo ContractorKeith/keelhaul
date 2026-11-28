@@ -10,11 +10,7 @@ const SCANNED_DIRS: &[&str] = &["src", "tests", "scripts", ".github"];
 fn comments_only_go_down() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let counts = scan(root);
-    if std::env::var_os(UPDATE_ENV).is_some() {
-        fs::write(root.join(BASELINE), render(&counts)).expect("write baseline");
-        return;
-    }
-    let baseline = parse(&fs::read_to_string(root.join(BASELINE)).unwrap_or_default());
+    let baseline = parse(&fs::read_to_string(root.join(BASELINE)).expect("read the baseline"));
     let mut problems = Vec::new();
     for (path, &count) in &counts {
         let allowed = baseline.get(path).copied().unwrap_or(0);
@@ -23,7 +19,23 @@ fn comments_only_go_down() {
                 "{path}: {count} comment lines, baseline allows {allowed}. Delete the comment; \
                  put a decision in docs/adr/, a hack in an issue."
             ));
-        } else if count < allowed {
+        }
+    }
+    let total: usize = counts.values().sum();
+    let allowed_total: usize = baseline.values().sum();
+    if std::env::var(UPDATE_ENV).is_ok_and(|value| value == "1") {
+        assert!(
+            total <= allowed_total,
+            "comment ratchet: {total} comment lines, baseline allows {allowed_total}; \
+             the baseline only goes down\n{}",
+            problems.join("\n")
+        );
+        fs::write(root.join(BASELINE), render(&counts)).expect("write baseline");
+        return;
+    }
+    for (path, &count) in &counts {
+        let allowed = baseline.get(path).copied().unwrap_or(0);
+        if count < allowed {
             problems.push(format!(
                 "{path}: {count} comment lines, baseline says {allowed}. Lower the baseline: \
                  {UPDATE_ENV}=1 cargo test --test no_comments"
@@ -46,18 +58,18 @@ fn comments_only_go_down() {
 }
 
 fn scan(root: &Path) -> BTreeMap<String, usize> {
-    let mut files = Vec::new();
-    for dir in SCANNED_DIRS {
-        walk(&root.join(dir), &mut files);
-    }
+    let files = tracked(root).unwrap_or_else(|| {
+        let mut files = Vec::new();
+        for dir in SCANNED_DIRS {
+            walk(&root.join(dir), &mut files);
+        }
+        files
+    });
     let mut counts = BTreeMap::new();
     for file in files {
-        let Ok(text) = fs::read_to_string(&file) else {
-            continue;
-        };
         let count = match file.extension().and_then(|e| e.to_str()) {
-            Some("rs") => rust_comment_lines(&text),
-            Some("sh" | "py" | "yml" | "yaml") => hash_comment_lines(&text),
+            Some("rs") => rust_comment_lines(&read(&file)),
+            Some("sh" | "py" | "yml" | "yaml") => hash_comment_lines(&read(&file)),
             _ => continue,
         };
         if count > 0 {
@@ -66,6 +78,32 @@ fn scan(root: &Path) -> BTreeMap<String, usize> {
         }
     }
     counts
+}
+
+fn read(file: &Path) -> String {
+    let bytes = fs::read(file).unwrap_or_else(|e| panic!("read {}: {e}", file.display()));
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn tracked(root: &Path) -> Option<Vec<PathBuf>> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z", "--"])
+        .args(SCANNED_DIRS)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let listing = String::from_utf8(output.stdout).ok()?;
+    Some(
+        listing
+            .split('\0')
+            .filter(|name| !name.is_empty())
+            .map(|name| root.join(name))
+            .collect(),
+    )
 }
 
 fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -203,7 +241,7 @@ fn rust_comment_lines(text: &str) -> usize {
 
 fn raw_prefix_ok(chars: &[char], i: usize) -> bool {
     let before = |k: usize| i.checked_sub(k).map_or('\0', |j| chars[j]);
-    !is_ident(before(1)) || (before(1) == 'b' && !is_ident(before(2)))
+    !is_ident(before(1)) || (matches!(before(1), 'b' | 'c') && !is_ident(before(2)))
 }
 
 fn is_ident(c: char) -> bool {
@@ -215,6 +253,7 @@ fn lexer_ignores_strings_and_counts_every_comment_form() {
     let source = concat!(
         "let a = \"s3://bucket\"; let b = r#\"// \"quoted\" \"#; let q = '\\'';\n",
         "let g = br\"\\\"; let h = b'\"'; // trailing after raw\n",
+        "let k = cr\"\\\"; // trailing after a C raw string\n",
         "let c = '/'; let d: &'static str = \"\\\" // still a string\";\n",
         "fn f() {} // trailing\n",
         "/// doc\n",
@@ -223,7 +262,7 @@ fn lexer_ignores_strings_and_counts_every_comment_form() {
         "   /* nested */ still */ let e = 1;\n",
         "let f = 2;\n",
     );
-    assert_eq!(rust_comment_lines(source), 6);
+    assert_eq!(rust_comment_lines(source), 7);
 }
 
 #[test]
