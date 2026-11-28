@@ -1,4 +1,3 @@
-//! SFTP v3 storage through the user's system ssh.
 pub mod client;
 mod codec;
 mod operations;
@@ -65,7 +64,6 @@ impl SftpBackend {
     fn path(&self, name: &str) -> String {
         format!("{}/{name}", self.root)
     }
-    /// Direct storage hook for conformance fixtures, including nested foreign names.
     pub fn plant_raw(&self, raw: &str, bytes: &[u8]) -> Result<(), BackendError> {
         if raw
             .split('/')
@@ -103,8 +101,6 @@ impl SftpBackend {
         let temp = format!("{path}.tmp-{}", hex::encode(nonce));
         let result = (|| -> Result<(), BackendError> {
             client.write_file(&temp, bytes)?;
-            // v3 RENAME refuses an existing destination, unlike POSIX rename.
-            // This is essential even across independent clients, not just this mutex.
             if let Err(error) = client.rename(&temp, &path, false)
                 && !compare(&mut client)?
             {

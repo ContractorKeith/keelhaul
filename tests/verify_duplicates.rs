@@ -1,4 +1,3 @@
-//! Resolve files through live index locations, including duplicates and subsets.
 use keelhaul::{
     backend::{Backend, Kind, memory::MemoryBackend},
     crypto::{
@@ -54,8 +53,6 @@ fn subsets_and_recovered_orphans_preserve_physical_damage_without_condemning_hea
     let mut bytes = repo.backend.read(&corrupt).unwrap();
     bytes[loc.blob.offset as usize + 24] ^= 1;
     repo.backend.plant_raw(corrupt.as_str(), &bytes).unwrap();
-    // Header recovery makes the orphan copy usable, while physical damage to
-    // the original pack/blob must still be reported independently.
     let report = verify(&repo, None).unwrap();
     assert!(!report.damage.iter().any(|d| d.kind == "file"));
     assert!(report.damage.iter().any(|d| d.object == loc.blob.id));
@@ -104,13 +101,11 @@ fn subsets_and_recovered_orphans_preserve_physical_damage_without_condemning_hea
     let report = verify(&repo, Some(subset)).unwrap();
     assert!(report.damage.iter().any(|d| d.object == loc.blob.id));
     assert!(!report.damage.iter().any(|d| d.kind == "file"));
-    // Force the failing copy to be first: a reader must try the healthy live copy.
     let mut reader = BlobStore::load(&repo).unwrap();
     reader
         .index
         .insert((BlobKind::Data, loc.blob.id.clone()), loc.clone());
     assert_eq!(reader.read(BlobKind::Data, &loc.blob.id).unwrap(), b"hello");
-    // Once both indexed copies fail, every referring file is damaged.
     let copy_name = pack_name(&copy).unwrap();
     let mut bytes = repo.backend.read(&copy_name).unwrap();
     bytes[24] ^= 1;

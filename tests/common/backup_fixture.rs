@@ -140,7 +140,6 @@ pub fn run<B: Backend>(backend: B) {
     assert!(!entries.is_empty());
 }
 
-/// Small mixed fixture for repeated damage tests, with chunks shared by files/snapshots.
 #[allow(
     dead_code,
     reason = "used by the damage harness, not round-trip targets"

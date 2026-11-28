@@ -1,4 +1,3 @@
-//! Shared opt-in Docker test gate. Services are started by the caller/CI.
 #![allow(dead_code, reason = "each e2e binary uses only its own Docker helpers")]
 pub fn enabled() -> bool {
     std::env::var("KEELHAUL_E2E").is_ok_and(|value| value == "1")
@@ -16,7 +15,6 @@ pub fn require_s3() {
     );
 }
 
-/// Run one fixture command, retaining stdout and stderr in failure diagnostics.
 pub fn run(command: &mut std::process::Command) -> std::process::Output {
     let output = command.output().expect("execute test command");
     assert!(

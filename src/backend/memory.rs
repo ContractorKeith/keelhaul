@@ -28,7 +28,6 @@ impl MemoryBackend {
             .map_err(|_| io::Error::other("memory backend mutex poisoned").into())
     }
 
-    /// Test fixtures can plant opaque storage entries without object validation.
     pub fn plant_raw(&self, raw: &str, bytes: &[u8]) -> Result<(), BackendError> {
         self.objects()?.insert(
             raw.to_owned(),

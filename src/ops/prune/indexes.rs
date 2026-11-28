@@ -1,4 +1,3 @@
-//! Partial replacements are additive. Only the final object supersedes old indexes.
 use crate::{
     backend::{Backend, Kind},
     crypto::envelope::Label,

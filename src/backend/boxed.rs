@@ -1,7 +1,6 @@
 use super::{Backend, BackendError, Entry, ForeignEntry, Kind, ObjectName};
 use std::path::Path;
 
-// Keep Repository generic while runtime backend selection uses one trait object.
 impl<B: Backend + ?Sized> Backend for Box<B> {
     fn write(&self, name: &ObjectName, bytes: &[u8]) -> Result<(), BackendError> {
         (**self).write(name, bytes)

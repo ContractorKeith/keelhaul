@@ -84,8 +84,6 @@ pub fn run_suite(b: &dyn Backend, case_sensitive: bool, plant_raw: impl Fn(&str,
         assert_eq!(b.stat(object).unwrap(), 0);
         b.delete(object).unwrap();
     }
-    // Different payloads expose check-then-rename races. A concurrent reader must
-    // see either NotFound or one complete, immutable payload, never a prefix.
     let object = name("config");
     let barrier = Barrier::new(8);
     let done = AtomicBool::new(false);

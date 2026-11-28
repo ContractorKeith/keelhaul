@@ -7,7 +7,6 @@ pub(super) struct RemoteStatus {
     message: String,
 }
 pub(super) fn unresolved_link(error: &io::Error) -> bool {
-    // v3 has no ELOOP status: OpenSSH reports loops as generic FAILURE (4).
     error
         .get_ref()
         .and_then(|e| e.downcast_ref::<RemoteStatus>())

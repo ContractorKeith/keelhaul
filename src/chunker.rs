@@ -1,4 +1,3 @@
-//! SPEC §6: keyed gear and streaming normalized FastCDC.
 use std::io::{self, Read};
 pub const MIN: usize = 524288;
 pub const NORMAL: usize = 1048576;
@@ -62,7 +61,6 @@ impl<R: Read> Chunker<R> {
             compactions: 0,
         }
     }
-    /// The next chunk borrows the fixed buffer until the next call.
     pub fn next_chunk(&mut self) -> io::Result<Option<&[u8]>> {
         loop {
             let available = self.end - self.start;
@@ -70,8 +68,6 @@ impl<R: Read> Chunker<R> {
                 return Ok(None);
             }
             let length = cut(&self.buffer[self.start..self.end], &self.gear);
-            // A discovered cut is independent of unread input. Exhaust the
-            // current tail before compacting, unless we need more bytes to cut.
             if self.eof || available == MAX || length < available {
                 let start = self.start;
                 self.start += length;

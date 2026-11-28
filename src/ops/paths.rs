@@ -1,11 +1,8 @@
-//! Root identity shared by backup, snapshot filters and future parent lookup.
 use std::{
     fs, io,
     path::{Component, Path, PathBuf},
 };
 
-/// Resolve the parent through the filesystem, preserving a final symlink.
-/// Historical paths whose parents disappeared use a cleaned absolute spelling.
 pub fn normalize_root(path: &Path) -> io::Result<PathBuf> {
     let joined = if path.is_absolute() {
         path.to_path_buf()

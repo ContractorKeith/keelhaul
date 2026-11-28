@@ -1,4 +1,3 @@
-//! Shared snapshot rendering with an explicit read-lock choice.
 use crate::{backend::Backend, ops, repo::Repository};
 pub(super) fn snapshots<B: Backend>(
     repo: &Repository<B>,
@@ -83,7 +82,6 @@ pub(super) fn snapshots<B: Backend>(
     Ok(())
 }
 
-// Only failed lock writes on readers suggest bypassing locking.
 pub(super) fn lock_hint(error: anyhow::Error, reader: bool) -> anyhow::Error {
     if reader && error.chain().any(|cause| {
         matches!(cause.downcast_ref::<crate::backend::BackendError>().or_else(|| {

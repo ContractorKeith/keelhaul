@@ -1,5 +1,4 @@
 use std::io::{self, Read};
-// Drain continuously, retaining a bounded diagnostic tail.
 pub(super) fn drain(input: &mut impl Read) -> Vec<u8> {
     let mut tail = Vec::new();
     let mut buffer = [0; 4096];
@@ -23,7 +22,6 @@ mod tests {
     use super::*;
     #[test]
     fn sftp_stderr_continues_after_interrupted_read() {
-        // Chain a finite tail after an injected interruption.
         struct Reader {
             interrupted: bool,
             rest: io::Cursor<Vec<u8>>,

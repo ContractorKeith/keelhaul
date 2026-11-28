@@ -23,8 +23,6 @@ fn upload_and_index_failures_release_backpressure_and_preserve_snapshots() {
             .fill(&mut bytes);
         fs::write(source.join(format!("new-{n}")), &bytes).unwrap();
     }
-    // Both failure points occur while other readers and uploads have work:
-    // first pack, first index, then a pack after a flushed index.
     for at in [2, 10, 11] {
         let copied = MemoryBackend::new();
         for kind in crate::backend::Kind::ALL {

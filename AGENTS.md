@@ -33,13 +33,14 @@ cargo build --release                   # target/release/keelhaul
 - `docs/RELEASING.md` — tag, release workflow, Homebrew and crates.io steps.
 - `docs/PLAN.md` — feature matrix, architecture rules, dependencies, CLI contract, milestones, testing, acceptance.
 - `CONTEXT.md` — glossary. Use its words in code, issues and PRs.
-- `docs/adr/` — keyed chunk IDs and gear; sync core and system ssh.
+- `docs/adr/` — every design decision: keyed chunk IDs (0001), sync core and system ssh (0002), no code comments (0003), backend contract (0004), S3 (0005), SFTP (0006), startup (0007), backup pipeline (0008), prune crash safety (0009), damage locality and locks (0010), restore safety (0011), key slots (0012), paths (0013), acceptance and release (0014).
 - `testdata/vectors/` — SPEC §12 test vectors.
 - Session logs: `~/Projects/worklog/projects/keelhaul.md` (not in this repo).
 
 ## Conventions & Gotchas
 
 - Rust work follows the `rust-best-practices` skill; review with `rust-review`.
+- No code comments (ADR 0003). A decision goes in `docs/adr/`, a shortcut in a `comment-debt` issue. `tests/no_comments.rs` ratchets `tests/comment_baseline.txt` down; `/delete-comment` runs a sweep.
 - `#![forbid(unsafe_code)]`. No async runtime (ADR 0002). Dependencies beyond PLAN §4 need a reason in the PR.
 - Only `src/backend/` touches storage. Everything above it is tested on the in-memory backend.
 - A repository read that fails to decrypt, hash-match or parse is `Damage` naming the object. It never panics, is never read as empty, and maps to exit 3. A wrong password or an I/O error is an error (exit 1).

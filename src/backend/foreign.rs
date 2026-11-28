@@ -1,7 +1,5 @@
 use super::{BackendError, Kind, ObjectName};
 
-// Raw names are repository-relative, and may never resolve outside their kind.
-// A valid object must go through the typed delete operation instead.
 pub(super) fn validate(raw: &str) -> Result<Kind, BackendError> {
     let invalid = || BackendError::InvalidName(raw.to_owned());
     if raw.is_empty()
@@ -13,7 +11,6 @@ pub(super) fn validate(raw: &str) -> Result<Kind, BackendError> {
         return Err(invalid());
     }
     let parts: Vec<_> = raw.split('/').collect();
-    // Direct data children may be shard directories: discovery does not grant deletion.
     if matches!(parts.as_slice(), ["data", _]) {
         return Err(invalid());
     }
@@ -30,7 +27,6 @@ pub(super) fn kind(raw: &str) -> Option<Kind> {
     position(raw)
 }
 
-// Only object-depth entries belong to the namespace; never descend arbitrarily.
 pub(super) fn position(raw: &str) -> Option<Kind> {
     let parts: Vec<_> = raw.split('/').collect();
     match parts.as_slice() {

@@ -1,4 +1,3 @@
-# Deliberately small independent v3 peer for Rust client contract tests.
 import struct, sys
 r, w = sys.stdin.buffer, sys.stdout.buffer
 mode = sys.argv[1]

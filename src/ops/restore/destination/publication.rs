@@ -1,7 +1,5 @@
 use super::*;
 use rustix::{fs::RenameFlags, io::Errno};
-/// A hard link publishes the already verified inode atomically without replacing
-/// an existing name, on filesystems that lack the no-replace rename operation.
 pub(super) fn finish(
     renamed: Result<(), Errno>,
     name: &std::ffi::OsStr,
@@ -34,9 +32,6 @@ pub(in crate::ops::restore) struct Temporary {
 impl Temporary {
     pub fn publish(&self, entry: &Entry) -> Result<FileIdentity, Error> {
         apply(&self.file, entry)?;
-        // fsync keeps per-file ordering without macOS's expensive drive-cache flush.
-        // Restore does one F_FULLFSYNC on the target directory after publication;
-        // sudden power loss before that final barrier may lose completed files.
         fs::fsync(&self.file).map_err(os)?;
         let renamed = fs::renameat_with(
             &self.parent,

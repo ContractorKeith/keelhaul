@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# scripts/accept.sh — the acceptance for keelhaul. Worker, reviewer and CI run this exact
-# script; the orchestrator never retypes it. Each milestone appends its live checks below.
-# Bash 3.2 compatible (macOS): no mapfile, no ${var,,}, no associative arrays.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -27,13 +24,11 @@ unset KEELHAUL_REPO KEELHAUL_PASSWORD_FILE KEELHAUL_PASSWORD_COMMAND KEELHAUL_KE
 
 echo "== live checks"
 "$bin" version | grep -q '^keelhaul '
-# M1+: init / key checks. M2+: backup → restore → diff. M3+: corrupt one pack → verify exits 3.
 
 echo "== M1 key rotation"
 printf 'pw1\n' > "$scratch/password"
 "$bin" -r "$scratch/repo" --password-file "$scratch/password" init --json
 "$bin" -r "$scratch/repo" --password-file "$scratch/password" key list --json > "$scratch/slots.json"
-# Extract the fixed JSON field without requiring jq or Python on release machines.
 original_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$scratch/slots.json")"
 test "${#original_id}" -eq 64
 "$bin" -r "$scratch/repo" --password-file "$scratch/password" key add --new-key-file "$scratch/key" --json
@@ -65,7 +60,6 @@ grep -q '"paths":' "$scratch/snapshots.json"
 "$bin" -r "$scratch/repo" --key-file "$scratch/key" restore latest --target "$scratch/out"
 restored="$scratch/out$fixture"
 diff -r "$fixture" "$restored"
-# Portable lstat walk: times are compared to seconds here; Rust tests pin nanoseconds.
 stat_walk() {
   root="$1"
   find "$root" -print0 | while IFS= read -r -d '' path; do
@@ -113,7 +107,6 @@ echo "== M3 check and verify"
 grep -q '"damage":\[\]' "$scratch/check.json"
 "$bin" -r "$scratch/repo" --key-file "$scratch/key" verify --json > "$scratch/verify-clean.json"
 pack="$(find "$scratch/repo/data" -type f | LC_ALL=C sort | head -n 1)"
-# XOR one byte without a Python/jq dependency (Bash arithmetic and portable od/dd).
 byte="$(od -An -tu1 -N1 "$pack" | tr -d ' ')"
 flipped=$((byte ^ 1))
 octal="$(printf '%03o' "$flipped")"

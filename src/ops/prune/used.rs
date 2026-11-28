@@ -1,4 +1,3 @@
-//! Physical duplicate damage is recoverable; an unreadable logical graph is not.
 use super::super::check::State;
 use crate::{
     backend::Backend,

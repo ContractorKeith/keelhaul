@@ -1,4 +1,3 @@
-//! Audit the DAG once; expand only branches that need per-file damage attribution.
 use super::*;
 use crate::format::tree::{Entry, Node};
 use std::{
@@ -108,7 +107,6 @@ pub(super) fn walk<B: Backend>(state: &mut State<'_, B>, verify: bool) -> Result
             }
         }
     }
-    // Mark ancestors of affected files, so a healthy deduplicated DAG costs O(V+E).
     let mut affected = issues.keys().cloned().collect::<HashSet<_>>();
     let mut queue = affected.iter().cloned().collect::<VecDeque<_>>();
     while let Some(id) = queue.pop_front() {

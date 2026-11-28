@@ -57,7 +57,7 @@ fn children_inner(
                     Ok(Vec::new())
                 }
                 Err(target) => Err(target),
-                Ok(_) => Err(error), // A live link to a non-directory is still an error.
+                Ok(_) => Err(error),
             },
             Ok(_) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
             Ok(_) => Err(error),
@@ -91,7 +91,6 @@ fn children(
     let result = children_inner(client, path, raw, entries);
     finish_at(client, path.as_bytes(), result)
 }
-// READDIR describes the link itself. Follow only links at fixed layout depths.
 fn resolve(client: &mut Client, path: &[u8], attrs: Attrs) -> io::Result<(Attrs, bool)> {
     if file_type(&attrs) != Some(0o120000) {
         return Ok((attrs, true));

@@ -141,13 +141,13 @@ fn s3_ignored_conditional_header_falls_back_once() {
     let (backend, worker) = mock(vec![
         (200, ""),
         (200, ""),
-        (204, ""), // probe detects ignored header, then cleans up
+        (204, ""),
         (404, ""),
-        (200, ""), // HEAD then PUT new object
+        (200, ""),
         (200, "abc"),
-        (200, "abc"), // identical retry: HEAD and GET
         (200, "abc"),
-        (200, "abc"), // conflicting retry: HEAD and GET
+        (200, "abc"),
+        (200, "abc"),
     ]);
     let name = ObjectName::new("config").unwrap();
     backend.write(&name, b"abc").unwrap();

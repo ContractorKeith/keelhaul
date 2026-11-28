@@ -1,4 +1,3 @@
-//! Bounded parsed-tree cache for readers that must enumerate every path.
 use super::{Error, blobs::BlobStore};
 use crate::{
     backend::Backend,
@@ -55,7 +54,6 @@ impl TreeCache {
         }
         let mut cost = 0;
         let result = store.read(BlobKind::Tree, id).and_then(|bytes| {
-            // Bound cached allocations conservatively, as well as entry count.
             cost = bytes.len().saturating_mul(8);
             let parsed = if salvage {
                 Tree::salvage(&bytes)

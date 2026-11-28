@@ -41,7 +41,6 @@ fn seeded_sigkill_prune_loop_and_backup_exclusion() {
     let mut data = vec![0; 64 * 1024];
     for generation in 0..3u64 {
         for n in 0..12u64 {
-            // Keep four chunks from the first pack so prune must repack it.
             if generation > 0 && n >= 8 {
                 continue;
             }
@@ -82,7 +81,6 @@ fn seeded_sigkill_prune_loop_and_backup_exclusion() {
         fs::remove_dir_all(root.join("repo")).unwrap();
         copy_repo(&root.join("template"), &root.join("repo"));
     }
-    // Stall after the exclusive lock, while uploading the replacement pack.
     let mut child = command(&root)
         .env("KEELHAUL_FAULT", "write:2:hang")
         .arg("prune")

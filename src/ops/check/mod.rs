@@ -1,4 +1,3 @@
-//! Metadata-only structural audit. Damage never stops unrelated objects being examined.
 mod inventory;
 mod lock;
 mod trees;
@@ -95,8 +94,6 @@ impl<'a, B: Backend> State<'a, B> {
     }
     pub(super) fn reachable(&mut self) -> Result<(), Error> {
         trees::walk(self, false)?;
-        // Prune must not mistake recovered, unused orphan blobs for indexed data:
-        // young packs (or packs with unknown ages) still need their grace period.
         let orphans = self
             .report
             .notes
@@ -174,14 +171,12 @@ pub fn check<B: Backend>(repo: &Repository<B>) -> Result<Report, Error> {
         run_check(State::new(&repo.backend, repo.subkeys()), damage)
     })
 }
-/// Authenticate without requiring a valid config: audit it with the other objects.
 pub fn check_backend<B: Backend>(backend: &B, secret: &Secret) -> Result<Report, Error> {
     let master = Repository::unlock(backend, secret)?;
     crate::repo::lock::with_audit(backend, master.subkeys(), |damage| {
         run_check(State::new(backend, master.subkeys()), damage)
     })
 }
-/// Audit read-only storage without acquiring a repository lock.
 pub fn check_backend_without_lock<B: Backend>(
     backend: &B,
     secret: &Secret,

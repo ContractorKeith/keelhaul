@@ -1,5 +1,3 @@
-//! These packs have valid AEAD: the oracle distinguishes framing/cache failures
-//! from keyed-ID failures. No audit output is used to construct expectations.
 use super::*;
 use keelhaul::{
     backend::{Backend, Kind, ObjectName},
@@ -100,8 +98,6 @@ fn replace_pack(f: &Fixture, old: &ObjectName, bytes: &[u8], index: &str) -> (St
 }
 pub fn run_cases(f: &Fixture, seed: u64) {
     duplicate_case(f, seed);
-    // Change the complete valid descriptor list, re-seal it, and rename the pack.
-    // Matching body permutation keeps the stored blobs valid; only the index lies.
     f.reset();
     let (name, mut blobs, index) = pair(f, seed);
     let mut bytes = f.bytes(name.as_str());
@@ -132,8 +128,6 @@ pub fn run_cases(f: &Fixture, seed: u64) {
         e.clone(),
         e,
     );
-    // Swap only two equal-length authenticated data envelopes, leaving descriptors.
-    // Updating the stored pack ID removes whole-pack hashing as a competing detector.
     f.reset();
     let (name, blobs, index) = pair(f, seed);
     let mut bytes = f.bytes(name.as_str());
@@ -150,8 +144,6 @@ pub fn run_cases(f: &Fixture, seed: u64) {
         Expected::new(),
         v,
     );
-    // Whole-pack contents swapped without renaming: both name hashes fail, and
-    // each cached header disagrees. The data envelopes themselves remain valid.
     f.reset();
     let (a, _, ia) = pair(f, seed);
     let (b, _, ib) = pair(f, seed.wrapping_add(10000));
@@ -171,9 +163,6 @@ pub fn run_cases(f: &Fixture, seed: u64) {
     run(f, seed, "swap two whole packs' contents", c, v);
 }
 
-/// A stored location may be damaged while its logical chunk remains restorable.
-/// The oracle retains physical pack/blob damage and adds referring files only
-/// after both independently sealed, indexed copies fail authentication.
 fn duplicate_case(f: &Fixture, seed: u64) {
     f.reset();
     let mut store = BlobStore::load(&f.repo).unwrap();

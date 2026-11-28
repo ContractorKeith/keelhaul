@@ -1,4 +1,3 @@
-//! Complete directories as their children arrive; completion order never changes JSON.
 use crate::{
     backend::Backend,
     format::{

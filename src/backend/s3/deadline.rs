@@ -1,4 +1,3 @@
-//! One monotonic budget includes attempts, response bodies and retry backoff.
 use super::{BackendError, error, retry};
 use std::time::{Duration, Instant};
 pub(super) trait Clock {

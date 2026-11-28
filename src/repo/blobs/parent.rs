@@ -1,4 +1,3 @@
-//! Parent metadata is a reuse hint. A failed verification invalidates dedup hints.
 use super::*;
 impl<B: Backend> BlobStore<'_, B> {
     pub(crate) fn read_parent_tree(&mut self, id: &str) -> Result<Vec<u8>, Error> {
@@ -12,8 +11,6 @@ impl<B: Backend> BlobStore<'_, B> {
                     .map_err(|e| missing(&name, e))
                     .and_then(|bytes| {
                         if blake3::hash(&bytes).to_hex().as_str() != location.pack {
-                            // Header damage does not invalidate independently authenticated
-                            // indexed blobs. `read` records it and verifies this tree below.
                             if matches!(
                                 crate::repo::audit::header(
                                     &self.repo.backend,

@@ -2,7 +2,6 @@ use serde::Serialize;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-// One command-wide context also covers warnings from backend/backup workers.
 static QUIET: AtomicBool = AtomicBool::new(false);
 static JSON: AtomicBool = AtomicBool::new(false);
 static WARNED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
@@ -47,7 +46,6 @@ pub fn version(mut out: impl Write, json: bool) -> io::Result<()> {
     }
 }
 
-/// Mark stdout failures separately from backend transport failures.
 pub fn stdout() -> impl Write {
     StdoutWriter(io::stdout())
 }
@@ -64,8 +62,6 @@ impl Write for StdoutWriter {
         self.0.flush().map_err(mark)
     }
 }
-// io::Error and serde_json forward source() past their own wrappers. Keep
-// the stdout marker one level down so repository wrappers also preserve it.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 struct WriteFailure(#[source] StdoutError);

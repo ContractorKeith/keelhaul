@@ -80,7 +80,6 @@ fn sftp_ssh_stderr_is_preserved() {
         Err(error) => error,
     };
     assert!(error.to_string().contains("fixture-ssh-error"));
-    // URL validation takes place before launching ssh.
     assert!(SftpUrl::parse("sftp:-bad:/repo").is_err());
 }
 fn assert_reaped(pid: u32) {

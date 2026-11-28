@@ -44,7 +44,6 @@ fn synthetic_hourly_leap_year_retention_golden_in_new_york() {
     std::fs::write(root.join("key"), [12; 32]).unwrap();
     let start = OffsetDateTime::parse("2024-01-01T05:00:00Z", &Rfc3339).unwrap();
     let mut by_id = std::collections::HashMap::new();
-    // 366 local days; the spring missing hour and fall repeated hour cancel.
     for hour in 0..8784 {
         let time = timestamp(start + time::Duration::hours(hour));
         let id = repo
@@ -93,10 +92,6 @@ fn synthetic_hourly_leap_year_retention_golden_in_new_york() {
         .iter()
         .map(|s| by_id[s["id"].as_str().unwrap()].clone())
         .collect::<HashSet<_>>();
-    // Monthly: last day of Jan–Dec at 23:00 NY (04:00 UTC before DST,
-    // 03:00 UTC during DST, then 04:00 UTC). Daily: Dec 25–31 at 23:00.
-    // ISO weeks: Dec 31 (2025-W01), Dec 29 (W52), Dec 22 (W51), Dec 15
-    // (W50). Dec 31 is monthly+daily; Dec 29 is daily. Union: 20 snapshots.
     let expected = [
         "2024-02-01T04",
         "2024-03-01T04",

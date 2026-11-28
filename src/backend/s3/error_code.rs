@@ -1,4 +1,3 @@
-//! Parse only the machine-readable error code; never expose server messages.
 use instant_xml::FromXml;
 #[derive(FromXml)]
 #[xml(rename = "Error")]

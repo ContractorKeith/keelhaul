@@ -1,4 +1,3 @@
-//! M2 command rendering stays separate from backend selection and key commands.
 use super::Command;
 use crate::{backend::Backend, ops, repo::Repository};
 pub(super) fn run<B: Backend>(
@@ -137,7 +136,6 @@ pub(super) fn short_id<'a>(id: &'a str, ids: &[String]) -> &'a str {
 }
 
 pub(super) fn completed_damage() -> std::io::Result<()> {
-    // Rendering is complete; avoid main emitting a second JSON document.
     use std::io::Write;
     std::io::stdout().flush()?;
     std::process::exit(crate::exit::code(Err(crate::exit::Failure::Damage)) as i32)

@@ -1,4 +1,3 @@
-//! Authenticated, content-addressed metadata objects.
 use super::{Error, Repository, open::damage};
 use crate::{
     backend::{Backend, BackendError, ObjectName},

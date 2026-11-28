@@ -12,7 +12,6 @@ use std::{collections::HashSet, sync::atomic::Ordering};
 #[test]
 fn split_indexes_are_additive_until_last_commit_and_safe_between_writes() {
     let (mut repo, snapshot, contents) = setup::fixture_with_packs(trace::Paused::default(), true);
-    // Keep rescued blobs in small packs so the seam tests index splitting.
     repo.config.pack_target = 1000;
     repo.backend.index_calls.store(0, Ordering::SeqCst);
     repo.backend.index_writes.lock().unwrap().clear();

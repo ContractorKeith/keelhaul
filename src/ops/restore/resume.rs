@@ -1,4 +1,3 @@
-//! Validate existing destination bytes without following symlinks.
 use super::{destination::Destination, plan::Item};
 use crate::{
     backend::Backend,

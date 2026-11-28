@@ -68,7 +68,7 @@ fn partial_restore_json_lists_failures_and_damage_wins_exit_code() {
             output
         );
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["failed"].as_array().unwrap().len(), 3); // b, directory, directory/child
+        assert_eq!(report["failed"].as_array().unwrap().len(), 3);
         assert_eq!(report["damage"].as_array().unwrap().is_empty(), !damaged);
         assert_eq!(fs::read(restored.join("z")).unwrap(), b"last");
         assert_eq!(fs::read(restored.join("b")).unwrap(), b"keep");

@@ -5,7 +5,6 @@ use crate::backend::{
     sftp::SftpBackend,
 };
 
-// All commands resolve --repo here; version does not open storage.
 pub(super) fn select(
     path: &str,
     initializing: bool,
@@ -44,8 +43,6 @@ pub(super) fn select(
         })
 }
 
-// Only a lowercase URI scheme before the first slash selects remote storage.
-// Explicit filesystem paths keep colons as ordinary filename characters.
 fn scheme(path: &str) -> Option<&str> {
     if path.starts_with(['/', '~']) || path.starts_with("./") || path.starts_with("../") {
         return None;

@@ -38,7 +38,6 @@ impl Uploads {
     }
 }
 impl<'a, B: Backend> BlobStore<'a, B> {
-    /// Fresh assembler for prune: retained data is explicitly copied, never deduplicated away.
     pub fn repack_writer(repo: &'a Repository<B>) -> Result<Self, Error> {
         let mut writer = Self::load(repo)?;
         writer.index.clear();
@@ -69,7 +68,6 @@ impl<'a, B: Backend> BlobStore<'a, B> {
             outstanding: 0,
         });
     }
-    /// The read workers own their keys; the repository's master key stays private.
     pub fn worker_keys(&self) -> ([u8; 32], [u8; 32]) {
         let keys = self.repo.master.subkeys();
         (keys.chunk_id, keys.encryption)
@@ -77,8 +75,6 @@ impl<'a, B: Backend> BlobStore<'a, B> {
 }
 
 impl<B: Backend> BlobStore<'_, B> {
-    /// Verify indexed copies before deduplicating. Only damage is healable;
-    /// transport and resource failures still abort the backup.
     pub fn add_healing(&mut self, blob: SealedBlob) -> Result<bool, Error> {
         let key = (blob.kind, blob.id.clone());
         let mut healed = self.suspect.contains(&key);

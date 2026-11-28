@@ -1,4 +1,3 @@
-//! Expected-set oracle: built from the original graph, never from audit output.
 #![allow(
     dead_code,
     reason = "fixture module also serves other integration targets"
@@ -50,7 +49,6 @@ impl Fixture {
         let mut store = BlobStore::load(&repo).unwrap();
         let mut locations = store.index.values().cloned().collect::<Vec<_>>();
         locations.sort_by(|a, b| (&a.pack, a.blob.offset).cmp(&(&b.pack, b.blob.offset)));
-        // Corrupt the root tree so descendants are intentionally unreachable.
         let roots = repo
             .snapshots()
             .unwrap()
@@ -189,7 +187,6 @@ pub fn file_errors(f: &Fixture, id: &str) -> Expected {
 pub mod authenticated;
 pub mod byte_cases;
 
-// Capture expected reachability from the intact graph, independently of audit output.
 fn file_graph(
     repo: &Repository<MemoryBackend>,
     store: &mut BlobStore<'_, MemoryBackend>,

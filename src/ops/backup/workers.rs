@@ -1,4 +1,3 @@
-//! Convert worker failures into the same cancellation path as ordinary I/O errors.
 use super::pipeline::Event;
 use crate::{
     backend::{Backend, BackendError},
@@ -32,7 +31,6 @@ pub(super) fn run(
     });
     match result {
         Err(error) => {
-            // Make the injected EMFILE regression exercise cancellation ordering.
             #[cfg(feature = "fault-injection")]
             if stage == "file" && std::env::var_os("KEELHAUL_TEST_EMFILE_AT_OPEN").is_some() {
                 std::thread::sleep(std::time::Duration::from_millis(10));

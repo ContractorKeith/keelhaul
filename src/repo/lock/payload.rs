@@ -63,7 +63,6 @@ impl Lock {
         let Some(pid) = rustix::process::Pid::from_raw(self.pid.try_into().unwrap_or(0)) else {
             return true;
         };
-        // EPERM means the PID exists; only ESRCH proves it is gone.
         matches!(
             rustix::process::test_kill_process(pid),
             Err(rustix::io::Errno::SRCH)

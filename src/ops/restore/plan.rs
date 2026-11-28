@@ -219,7 +219,6 @@ pub(super) fn build<B: Backend>(
     }
     let mut items = planner.items;
     items.sort_by(|a, b| a.path.cmp(&b.path));
-    // Disable linking for the entire inconsistent group, including aliases seen first.
     let mut groups = HashMap::new();
     let mut independent = HashSet::new();
     for item in &items {

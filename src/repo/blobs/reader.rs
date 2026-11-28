@@ -1,4 +1,3 @@
-//! Authenticated ranged reads and complete index/header agreement.
 use super::*;
 impl<B: Backend> BlobStore<'_, B> {
     pub(crate) fn chunk_id_key(&self) -> [u8; 32] {
@@ -9,8 +8,6 @@ impl<B: Backend> BlobStore<'_, B> {
         expected: &HashSet<(BlobKind, String)>,
         present: &HashSet<String>,
     ) -> bool {
-        // Usually every primary copy exists. Scan alternatives once only when
-        // a referenced primary pack disappeared during a concurrent repack.
         let mut missing = expected
             .iter()
             .filter(|key| {
@@ -119,8 +116,6 @@ impl<B: Backend> BlobStore<'_, B> {
                 "index differs from complete pack header",
             ));
         }
-        // Blob AEAD and keyed IDs authenticate ranged reads independently; M3
-        // checks the whole pack ID so one damaged blob need not block its neighbors.
         self.verified.insert(id.into());
         Ok(())
     }

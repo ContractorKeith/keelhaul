@@ -20,7 +20,6 @@ pub(super) fn retryable(error: &ureq::Error) -> bool {
     }
 }
 
-// Keep all messages independent of URLs, credentials and server-provided text.
 pub(super) fn cause(error: &ureq::Error) -> &'static str {
     match error {
         ureq::Error::BodyExceedsLimit(_) => "S3 response body exceeds 128 MiB",
